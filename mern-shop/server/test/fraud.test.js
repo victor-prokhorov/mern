@@ -234,22 +234,32 @@ describe('fraud scoring integration', () => {
     expect(orderCount).to.equal(4)
   })
 
-  it('BLOCKED_DOMAIN fires end to end: the same checkout is allowed before the domain is blocked and denied after', async () => {
+  it('allows a checkout whose email domain is not on the blocklist', async () => {
     const user = await seedUsers()
     await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
-    const customer = { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' }
-    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }], 'cart-before')
+    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }])
 
-    const before = await request.execute(app).post('/api/orders').send({ cartId: 'cart-before', userId: user._id.toString(), customer })
+    const res = await request
+      .execute(app)
+      .post('/api/orders')
+      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
 
-    expect(before).to.have.status(201)
-    expect(before.body.status).to.equal('pending')
+    expect(res).to.have.status(201)
+    expect(res.body.status).to.equal('pending')
+  })
 
+  it('BLOCKED_DOMAIN fires end to end: denies a checkout whose email domain is on the blocklist', async () => {
+    const user = await seedUsers()
+    await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
     await request.execute(app).post('/api/blocks').set('x-admin-token', process.env.ADMIN_TOKEN).send({ type: 'domain', value: 'fraud-signal-domain.test', reason: 'known fraud domain' })
-    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }], 'cart-after')
-    const after = await request.execute(app).post('/api/orders').send({ cartId: 'cart-after', userId: user._id.toString(), customer })
+    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }])
 
-    expect(after).to.have.status(403)
-    expect(after.body.error).to.equal('order could not be completed')
+    const res = await request
+      .execute(app)
+      .post('/api/orders')
+      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
+
+    expect(res).to.have.status(403)
+    expect(res.body.error).to.equal('order could not be completed')
   })
 })

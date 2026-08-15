@@ -13,6 +13,11 @@ function hashToken(rawToken) {
   return crypto.createHash('sha256').update(rawToken).digest('hex')
 }
 
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key]
+  else process.env[key] = value
+}
+
 describe('password reset', () => {
   useTestDb()
 
@@ -27,7 +32,7 @@ describe('password reset', () => {
       expect(unknown).to.have.status(202)
       expect(JSON.stringify(known.body)).to.equal(JSON.stringify(unknown.body))
     } finally {
-      process.env.EXPOSE_RESET_TOKEN = previousValue
+      restoreEnv('EXPOSE_RESET_TOKEN', previousValue)
     }
   })
 
@@ -50,7 +55,7 @@ describe('password reset', () => {
       expect(res).to.have.status(202)
       expect(res.body).to.not.have.property('token')
     } finally {
-      process.env.EXPOSE_RESET_TOKEN = previousValue
+      restoreEnv('EXPOSE_RESET_TOKEN', previousValue)
     }
   })
 
