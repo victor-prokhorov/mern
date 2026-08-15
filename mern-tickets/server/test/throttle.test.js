@@ -65,6 +65,18 @@ describe('token bucket throttling', () => {
     expect(otherAction.allowed).to.equal(true)
   })
 
+  it('never throws under heavy concurrent contention for the same bucket', async () => {
+    const now = new Date()
+    const attempts = Array.from({ length: 30 }, () => consume('contended-user', 'comment:create', now))
+
+    const results = await Promise.all(attempts)
+
+    const allowedCount = results.filter((r) => r.allowed).length
+    expect(allowedCount).to.equal(20)
+    expect(results.every((r) => typeof r.allowed === 'boolean')).to.equal(true)
+    expect(results.filter((r) => !r.allowed).every((r) => Number.isFinite(r.retryAfter))).to.equal(true)
+  })
+
   it('responds 429 with a Retry-After header once the burst is exhausted over HTTP', async () => {
     const [, , , rae] = await seedUsers()
 
