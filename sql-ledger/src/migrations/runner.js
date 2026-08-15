@@ -13,8 +13,8 @@ function isConcurrent(name) {
   return name.endsWith('.concurrent.sql')
 }
 
-function migrationFiles() {
-  return readdirSync(MIGRATIONS_DIR).filter(isMigrationFile).sort()
+function migrationFiles(migrationsDir) {
+  return readdirSync(migrationsDir).filter(isMigrationFile).sort()
 }
 
 async function ensureSchemaMigrationsTable(client) {
@@ -45,16 +45,16 @@ async function applyConcurrent(client, file, sql) {
   await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file])
 }
 
-export async function migrate(pool) {
+export async function migrate(pool, { migrationsDir = MIGRATIONS_DIR } = {}) {
   const client = await pool.connect()
   try {
     await client.query('SELECT pg_advisory_lock($1)', [LOCK_KEY])
     await ensureSchemaMigrationsTable(client)
     const applied = await appliedVersions(client)
-    const pending = migrationFiles().filter((file) => !applied.has(file))
+    const pending = migrationFiles(migrationsDir).filter((file) => !applied.has(file))
     const results = []
     for (const file of pending) {
-      const sql = readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+      const sql = readFileSync(path.join(migrationsDir, file), 'utf8')
       if (isConcurrent(file)) await applyConcurrent(client, file, sql)
       else await applyTransactional(client, file, sql)
       results.push(file)
@@ -66,12 +66,12 @@ export async function migrate(pool) {
   }
 }
 
-export async function status(pool) {
+export async function status(pool, { migrationsDir = MIGRATIONS_DIR } = {}) {
   const client = await pool.connect()
   try {
     await ensureSchemaMigrationsTable(client)
     const applied = await appliedVersions(client)
-    return migrationFiles().map((file) => ({ version: file, applied: applied.has(file) }))
+    return migrationFiles(migrationsDir).map((file) => ({ version: file, applied: applied.has(file) }))
   } finally {
     client.release()
   }
