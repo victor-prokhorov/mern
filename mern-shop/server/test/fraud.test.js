@@ -17,15 +17,33 @@ process.env.ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'test-admin-token'
 
 describe('fraud signals', () => {
   it('NEW_ACCOUNT triggers for an account younger than 24 hours', () => {
-    const signal = NEW_ACCOUNT({ user: { createdAt: new Date() } })
+    const createdAt = new Date('2026-01-01T00:00:00.000Z')
+    const now = createdAt.getTime() + 60 * 60 * 1000
+
+    const signal = NEW_ACCOUNT({ user: { createdAt }, now })
 
     expect(signal).to.deep.equal({ code: 'NEW_ACCOUNT', weight: 20, triggered: true, detail: 'account is less than 24 hours old' })
   })
 
   it('NEW_ACCOUNT does not trigger for an older account', () => {
-    const signal = NEW_ACCOUNT({ user: { createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) } })
+    const createdAt = new Date('2026-01-01T00:00:00.000Z')
+    const now = createdAt.getTime() + 25 * 60 * 60 * 1000
+
+    const signal = NEW_ACCOUNT({ user: { createdAt }, now })
 
     expect(signal.triggered).to.equal(false)
+  })
+
+  it('NEW_ACCOUNT is a pure function of user.createdAt and now, not the wall clock', () => {
+    const createdAt = new Date('2026-01-01T00:00:00.000Z')
+
+    const justAfter = NEW_ACCOUNT({ user: { createdAt }, now: createdAt.getTime() + 1000 })
+    const justBefore24h = NEW_ACCOUNT({ user: { createdAt }, now: createdAt.getTime() + 24 * 60 * 60 * 1000 - 1 })
+    const justAfter24h = NEW_ACCOUNT({ user: { createdAt }, now: createdAt.getTime() + 24 * 60 * 60 * 1000 + 1 })
+
+    expect(justAfter.triggered).to.equal(true)
+    expect(justBefore24h.triggered).to.equal(true)
+    expect(justAfter24h.triggered).to.equal(false)
   })
 
   it('ORDER_VELOCITY triggers past 3 orders in the last hour', () => {
@@ -132,27 +150,29 @@ describe('fraud score', () => {
     expect(result.decision).to.equal('deny')
   })
 
-  it('is deterministic: the same inputs always score the same order the same way', () => {
+  it('is deterministic: the same inputs, including the same injected now, always score the same order the same way', () => {
     const context = {
-      user: { email: 'demo@shop.test', createdAt: new Date() },
+      user: { email: 'demo@shop.test', createdAt: new Date('2026-01-01T00:00:00.000Z') },
       cart: { items: [{ price: 250, qty: 1 }] },
       customer: { email: 'other@shop.test' },
-      stats: { recentOrderCount: 1, isDomainBlocked: false }
+      stats: { recentOrderCount: 1, isDomainBlocked: false },
+      now: new Date('2026-01-01T01:00:00.000Z').getTime()
     }
 
     const first = score(evaluateSignals(context))
     const second = score(evaluateSignals(context))
 
     expect(first).to.deep.equal(second)
+    expect(first.reasons).to.include('NEW_ACCOUNT')
   })
 })
 
 describe('fraud scoring integration', () => {
   useTestDb()
 
-  async function setUpCart(items) {
+  async function setUpCart(items, cartId = 'cart-1') {
     const products = await Promise.all(items.map((item) => Product.create({ name: item.name, price: item.price, stock: 1000 })))
-    await Cart.create({ cartId: 'cart-1', items: products.map((product, i) => ({ product: product._id, qty: items[i].qty })) })
+    await Cart.create({ cartId, items: products.map((product, i) => ({ product: product._id, qty: items[i].qty })) })
   }
 
   it('allows a clean order and never returns the score or reasons to the client', async () => {
@@ -212,5 +232,24 @@ describe('fraud scoring integration', () => {
     expect(cart.items).to.have.length(1)
     const orderCount = await Order.countDocuments({ user: user._id })
     expect(orderCount).to.equal(4)
+  })
+
+  it('BLOCKED_DOMAIN fires end to end: the same checkout is allowed before the domain is blocked and denied after', async () => {
+    const user = await seedUsers()
+    await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
+    const customer = { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' }
+    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }], 'cart-before')
+
+    const before = await request.execute(app).post('/api/orders').send({ cartId: 'cart-before', userId: user._id.toString(), customer })
+
+    expect(before).to.have.status(201)
+    expect(before.body.status).to.equal('pending')
+
+    await request.execute(app).post('/api/blocks').set('x-admin-token', process.env.ADMIN_TOKEN).send({ type: 'domain', value: 'fraud-signal-domain.test', reason: 'known fraud domain' })
+    await setUpCart([{ name: 'Mug', price: 20, qty: 1 }], 'cart-after')
+    const after = await request.execute(app).post('/api/orders').send({ cartId: 'cart-after', userId: user._id.toString(), customer })
+
+    expect(after).to.have.status(403)
+    expect(after.body.error).to.equal('order could not be completed')
   })
 })

@@ -3,6 +3,7 @@ import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
+import User from '../src/models/user.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { normalizeEmail, blockUser, unblockUser } from '../src/services/blocks.js'
 import { useTestDb } from './helpers.js'
@@ -60,15 +61,29 @@ describe('user blocklist', () => {
     expect(res.body.error).to.equal('account is not available')
   })
 
-  it('rejects an order whose checkout email is on a blocked domain', async () => {
-    const user = await seedUsers()
-    await setUpCart(user._id)
-    await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'domain', value: 'fraud.test', reason: 'known fraud domain' })
+  it('refuses an order when the account email domain itself is on the pattern blocklist', async () => {
+    const user = await User.create({ name: 'Frank', email: 'frank@special-domain.test', passwordHash: 'irrelevant' })
+    await setUpCart()
+    await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'domain', value: 'special-domain.test', reason: 'known fraud domain' })
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'eve@fraud.test', address: '1 Main Street' } })
+      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Frank', email: 'someone-else@shop.test', address: '1 Main Street' } })
+
+    expect(res).to.have.status(403)
+    expect(res.body.error).to.equal('account is not available')
+  })
+
+  it('refuses an order when the account email itself is on the pattern blocklist, even with a different checkout email', async () => {
+    const user = await seedUsers()
+    await setUpCart()
+    await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'email', value: seedUser.email, reason: 'known fraud' })
+
+    const res = await request
+      .execute(app)
+      .post('/api/orders')
+      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'someone-else@shop.test', address: '1 Main Street' } })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('account is not available')
