@@ -8,6 +8,7 @@ import { authorize } from '../policy/engine.js'
 import { throttle } from '../throttle/tokenBucket.js'
 import { run as runHooks } from '../hooks/registry.js'
 import { notify } from '../notifier/webhook.js'
+import { viewModeratable } from '../moderation/view.js'
 
 export const TRANSITIONS = {
   open: ['triaged'],
@@ -75,13 +76,13 @@ export async function get({ subject, id }) {
   return { ticket, comments: ticketComments, events }
 }
 
-export async function casWriteOrConflict(ticket, ifMatch, update) {
+export async function casWriteOrConflict(ticket, ifMatch, update, subject) {
   if (ifMatch.status === 'missing') throw new PreconditionRequiredError('If-Match header is required')
   if (ifMatch.status === 'malformed') throw new BadRequestError('malformed If-Match header')
   const updated = await tickets.updateIfVersionMatches(ticket._id, ifMatch.version, update)
   if (updated) return updated
   const current = await requireTicket(ticket._id)
-  throw new PreconditionFailedError('ticket has been modified since the expected version', current.version, current.toJSON())
+  throw new PreconditionFailedError('ticket has been modified since the expected version', current.version, viewModeratable(current, subject))
 }
 
 export async function transitionStatus({ subject, id, status, ifMatch }) {
@@ -90,7 +91,7 @@ export async function transitionStatus({ subject, id, status, ifMatch }) {
   const allowed = TRANSITIONS[ticket.status] || []
   if (!allowed.includes(status)) throw new BadRequestError('invalid status transition')
   const from = ticket.status
-  const updated = await casWriteOrConflict(ticket, ifMatch, { status })
+  const updated = await casWriteOrConflict(ticket, ifMatch, { status }, subject)
   await ticketEvents.create({ ticket: updated._id, actor: subject.id, type: 'status_changed', from, to: status, version: updated.version })
   notify({ type: 'ticket:status-changed', ticketId: updated._id.toString(), status: updated.status })
   return updated
@@ -103,7 +104,7 @@ export async function assign({ subject, id, assigneeId, ifMatch }) {
   const assigneeUser = await users.findById(assigneeId)
   if (!assigneeUser) throw new BadRequestError('assignee not found')
   const from = ticket.assignee ? ticket.assignee.toString() : null
-  const updated = await casWriteOrConflict(ticket, ifMatch, { assignee: assigneeUser._id })
+  const updated = await casWriteOrConflict(ticket, ifMatch, { assignee: assigneeUser._id }, subject)
   await ticketEvents.create({ ticket: updated._id, actor: subject.id, type: 'assignee_changed', from, to: assigneeUser._id.toString(), version: updated.version })
   return updated
 }
