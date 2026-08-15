@@ -24,6 +24,9 @@ function requireItem(cart, productId) {
 
 async function send(res, cart) {
   await cart.populate('items.product')
+  const staleCount = cart.items.length
+  cart.items = cart.items.filter((entry) => entry.product !== null)
+  if (cart.items.length !== staleCount) await cart.save()
   res.json(cart)
 }
 
