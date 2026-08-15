@@ -117,7 +117,9 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-354 tests across the four apps (124 shop, 134 tickets, 55 movies, 41 ledger).
+369 tests across the four apps (124 shop, 141 tickets, 58 movies, 46 ledger), plus a
+mutation-testing tool under `tools/mutation` that audits how much those tests
+actually prove.
 The MERN suites need a reachable MongoDB; `sql-ledger` needs a reachable
 Postgres and creates its own `ledger_test` database on first run.
 
