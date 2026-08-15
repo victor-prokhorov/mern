@@ -29,6 +29,7 @@ toy skips, and further reading.
 | Keyword blocking and moderation | [mern-tickets/server/src/moderation](mern-tickets/server/src/moderation/README.md) |
 | Throttling | [mern-tickets/server/src/throttle](mern-tickets/server/src/throttle/README.md) |
 | Hook pipelines | [mern-tickets/server/src/hooks](mern-tickets/server/src/hooks/README.md) |
+| Circuit breaker | [mern-tickets/server/src/circuitBreaker](mern-tickets/server/src/circuitBreaker/README.md) |
 | Recommendations | [mern-movies/server/src/recommendations](mern-movies/server/src/recommendations/README.md) |
 | Fan-out and notifications | [mern-movies/server/src/notifications](mern-movies/server/src/notifications/README.md) |
 | Domain modelling | [mern-movies/server/src/movies](mern-movies/server/src/movies/README.md) |
