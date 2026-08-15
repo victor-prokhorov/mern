@@ -15,6 +15,7 @@ toy skips, and further reading.
 | [mern-shop](mern-shop/) | Minimal ecommerce: catalogue, server-side cart, login, orders. Raw HTML from React, no CSS. Plus four security topics. |
 | [mern-tickets](mern-tickets/) | Support-ticket API. Workflow state machine, authorization, moderation, throttling. Server only. |
 | [mern-movies](mern-movies/) | Movie API. Recommendations and follow/notify fan-out. Server only. |
+| [sql-ledger](sql-ledger/) | Postgres double-entry ledger. Transactional outbox, zero-downtime expand-contract migrations, keyset pagination. Server only. |
 
 ## Topics
 
@@ -33,6 +34,9 @@ toy skips, and further reading.
 | Recommendations | [mern-movies/server/src/recommendations](mern-movies/server/src/recommendations/README.md) |
 | Fan-out and notifications | [mern-movies/server/src/notifications](mern-movies/server/src/notifications/README.md) |
 | Domain modelling | [mern-movies/server/src/movies](mern-movies/server/src/movies/README.md) |
+| Zero-downtime migrations (expand-contract) | [sql-ledger/src/migrations](sql-ledger/src/migrations/README.md) |
+| Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
+| Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
 
 ## Requirements
 
