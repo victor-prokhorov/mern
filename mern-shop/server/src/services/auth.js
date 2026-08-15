@@ -25,21 +25,22 @@ export async function login(email, password) {
   return { user, accessToken, refreshToken }
 }
 
-export async function refresh(rawRefreshToken, hooks = {}) {
+export async function completeRotation(consumed, now) {
+  const { accessToken, refreshToken, tokenHash: newTokenHash } = await issueSession(consumed.user, consumed.familyId)
+  await sessions.markReplacedBy(consumed._id, newTokenHash)
+  if (await sessions.isFamilyRevoked(consumed.familyId)) {
+    await sessions.revokeFamily(consumed.familyId, now)
+    throw new UnauthorizedError('invalid refresh token')
+  }
+  return { accessToken, refreshToken }
+}
+
+export async function refresh(rawRefreshToken) {
   if (!rawRefreshToken) throw new BadRequestError('refresh token is required')
   const tokenHash = hashRefreshToken(rawRefreshToken)
   const now = new Date()
   const consumed = await sessions.consumeToken(tokenHash, now)
-  if (consumed) {
-    if (hooks.afterConsume) await hooks.afterConsume(consumed)
-    const { accessToken, refreshToken, tokenHash: newTokenHash } = await issueSession(consumed.user, consumed.familyId)
-    await sessions.markReplacedBy(consumed._id, newTokenHash)
-    if (await sessions.isFamilyRevoked(consumed.familyId)) {
-      await sessions.revokeFamily(consumed.familyId, now)
-      throw new UnauthorizedError('invalid refresh token')
-    }
-    return { accessToken, refreshToken }
-  }
+  if (consumed) return completeRotation(consumed, now)
   const existing = await sessions.findByTokenHash(tokenHash)
   if (existing && existing.usedAt && !existing.revokedAt) await sessions.revokeFamily(existing.familyId, now)
   throw new UnauthorizedError('invalid refresh token')
