@@ -19,37 +19,48 @@ toy skips, and further reading.
 
 ## Topics
 
+Twenty-one guides, each beside the code it describes.
+
 | Topic | Where |
 |---|---|
 | Password reset | [mern-shop/server/src/passwordReset](mern-shop/server/src/passwordReset/README.md) |
 | Rate limiting | [mern-shop/server/src/rateLimit](mern-shop/server/src/rateLimit/README.md) |
 | User blocklist | [mern-shop/server/src/blocklist](mern-shop/server/src/blocklist/README.md) |
 | Fraud scoring | [mern-shop/server/src/fraud](mern-shop/server/src/fraud/README.md) |
+| Idempotency keys | [mern-shop/server/src/idempotency](mern-shop/server/src/idempotency/README.md) |
+| Sessions, token rotation, revocation | [mern-shop/server/src/session](mern-shop/server/src/session/README.md) |
 | Workflow, state machines, audit logs | [mern-tickets/server/src/tickets](mern-tickets/server/src/tickets/README.md) |
 | Authorization policy engine | [mern-tickets/server/src/policy](mern-tickets/server/src/policy/README.md) |
 | Keyword blocking and moderation | [mern-tickets/server/src/moderation](mern-tickets/server/src/moderation/README.md) |
 | Throttling | [mern-tickets/server/src/throttle](mern-tickets/server/src/throttle/README.md) |
 | Hook pipelines | [mern-tickets/server/src/hooks](mern-tickets/server/src/hooks/README.md) |
 | Circuit breaker | [mern-tickets/server/src/circuitBreaker](mern-tickets/server/src/circuitBreaker/README.md) |
+| Optimistic concurrency (ETag / If-Match) | [mern-tickets/server/src/concurrency](mern-tickets/server/src/concurrency/README.md) |
+| Observability: logs, metrics, health, shutdown | [mern-tickets/server/src/observability](mern-tickets/server/src/observability/README.md) |
 | Recommendations | [mern-movies/server/src/recommendations](mern-movies/server/src/recommendations/README.md) |
 | Fan-out and notifications | [mern-movies/server/src/notifications](mern-movies/server/src/notifications/README.md) |
 | Domain modelling | [mern-movies/server/src/movies](mern-movies/server/src/movies/README.md) |
+| Double-entry ledger, money, isolation | [sql-ledger/src/ledger](sql-ledger/src/ledger/README.md) |
 | Zero-downtime migrations (expand-contract) | [sql-ledger/src/migrations](sql-ledger/src/migrations/README.md) |
 | Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
 | Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
 
+Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
+
 ## Requirements
 
 - Node 20+
-- MongoDB on `mongodb://127.0.0.1:27017`
+- MongoDB on `mongodb://127.0.0.1:27017` for the three MERN apps
+- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger`
 
-No MongoDB installed locally? Run one in Docker:
+Neither installed locally? Run them in Docker:
 
 ```bash
 docker run -d --name mern-mongo -p 27017:27017 --restart unless-stopped mongo:7
+docker run -d --name mern-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres --restart unless-stopped postgres:16
 ```
 
-## Running any app
+## Running the MERN apps
 
 ```bash
 cd <app>/server
@@ -59,6 +70,22 @@ npm run seed
 npm run dev
 ```
 
+Two things `.env.example` does not tell you:
+
+- **`mern-shop` will not start without `JWT_SECRET`.** `src/session/tokens.js`
+  throws at import rather than fall back to a hardcoded signing key, so
+  `npm run dev` after `cp .env.example .env` fails with
+  `JWT_SECRET environment variable must be set`. Use
+  `JWT_SECRET=dev-secret npm run dev`. The blocklist guide additionally needs
+  `ADMIN_TOKEN` and the password-reset guide needs `EXPOSE_RESET_TOKEN=1`; see
+  [mern-shop/README.md](mern-shop/README.md) for the table.
+- **`mern-tickets` and `mern-movies` both default to port 5001.** Whichever
+  starts second dies with `EADDRINUSE`. Run one of them with `PORT=5002` — or,
+  since `sql-ledger` owns 5002, pick anything free.
+
+Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5001,
+`sql-ledger` 5002, `mern-shop`'s Vite client 5173.
+
 `mern-shop` also has a client:
 
 ```bash
@@ -67,24 +94,39 @@ npm install
 npm run dev
 ```
 
+## Running sql-ledger
+
+Different shape: no `server/` subdirectory, no seed script, and migrations
+instead of fixtures.
+
+```bash
+cd sql-ledger
+npm install
+cp .env.example .env
+npm run migrate
+npm run dev
+```
+
 ## Tests
 
 ```bash
-cd <app>/server
+cd <app>/server   # or just cd sql-ledger
 npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-252 tests across the three apps (85 shop, 112 tickets, 55 movies). They need a
-reachable MongoDB.
+352 tests across the four apps (122 shop, 134 tickets, 55 movies, 41 ledger).
+The MERN suites need a reachable MongoDB; `sql-ledger` needs a reachable
+Postgres and creates its own `ledger_test` database on first run.
 
 ## House rules
 
 These are constraints on the exercise, not recommendations for production.
 
 - A closed dependency list per app. No Redis, no rate-limit package, no policy
-  engine, no moderation library — the point is building them and understanding
-  the tradeoffs, so anything that hides the mechanism is out.
+  engine, no moderation library, no ORM or migration library in `sql-ledger` —
+  the point is building them and understanding the tradeoffs, so anything that
+  hides the mechanism is out.
 - No comments in source. Explanation belongs in the READMEs, where it can be
   long enough to be true.
 - No CSS anywhere. Raw HTML tags only.

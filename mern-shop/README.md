@@ -53,6 +53,24 @@ npm run dev
 
 Client on `http://localhost:5173`, proxying `/api` to the server on `:5000`.
 
+**The client's login and checkout are currently broken, and it is a code bug,
+not a setup problem.** Browsing, the cart, and product pages work. Checkout does
+not. Two changes landed on the server without being propagated to
+`client/src/`:
+
+- `POST /api/auth/login` now returns `{ user, accessToken, refreshToken }`
+  rather than the user document. `pages/Login.jsx` stores that whole envelope
+  as if it were the user, so `user._id` is `undefined` everywhere afterwards,
+  and both tokens are discarded.
+- `POST /api/orders` now requires `Authorization: Bearer <accessToken>` and
+  takes identity from the token
+  ([`server/src/session`](server/src/session/README.md)). `api.js`'s
+  `placeOrder` still sends `userId` in the body and no header, so it gets
+  `401 authentication required`.
+
+The API itself is fine — every curl in the server-side guides works. Use those
+until the client is caught up.
+
 ## Topics
 
 Six guides live beside the code they describe.
