@@ -16,7 +16,7 @@ This is fail-open by construction, and it is worth being blunt about the consequ
 
 That order is load-bearing, not cosmetic. `linkLimitHandler` reads `payload.moderation.terms` (`src/hooks/bootstrap.js:25`) and appends to it, so it depends on `keywordBlockerHandler` having already run and written that field; registered the other way round, the keyword blocker's `transform` would build a fresh `moderation` object and discard `'link-limit-exceeded'`. The registry cannot express or check that dependency — see "The core concepts."
 
-`create` and `addComment` (`src/services/tickets.js:38`, `src/services/tickets.js:106`) call `runHooks(event, payload)` after the throttle check and before touching the database, and inspect the outcome: `reject` becomes a 400 with `outcome.reason` as the message (`src/services/tickets.js:39`, `src/services/tickets.js:107`); otherwise the (possibly transformed) `outcome.payload` — including any `moderation` field a handler attached — is what gets persisted.
+`create` and `addComment` (`src/services/tickets.js:40`, `src/services/tickets.js:117`) call `runHooks(event, payload)` after the throttle check and before touching the database, and inspect the outcome: `reject` becomes a 400 with `outcome.reason` as the message (`src/services/tickets.js:41`, `src/services/tickets.js:118`); otherwise the (possibly transformed) `outcome.payload` — including any `moderation` field a handler attached — is what gets persisted.
 
 ## The core concepts
 
