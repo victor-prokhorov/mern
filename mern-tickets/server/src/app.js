@@ -4,6 +4,9 @@ import cors from 'cors'
 import auth from './routes/auth.js'
 import tickets from './routes/tickets.js'
 import { errorHandler } from './middleware/error.js'
+import { registerModerationHooks } from './hooks/bootstrap.js'
+
+registerModerationHooks()
 
 const app = express()
 

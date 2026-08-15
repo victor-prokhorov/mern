@@ -73,7 +73,7 @@ describe('tickets', () => {
   it('filters tickets by status, assignee and priority', async () => {
     const [, gale, , rae] = await seedUsers()
     const first = await createTicket(rae._id.toString(), { priority: 'high' })
-    await createTicket(rae._id.toString(), { priority: 'low' })
+    await createTicket(rae._id.toString(), { priority: 'low', body: 'Export is very slow today.' })
     await request.execute(app).patch(`/api/tickets/${first.body._id}/assignee`).set('x-user-id', gale._id.toString()).send({ assigneeId: gale._id.toString() })
 
     const byPriority = await request.execute(app).get('/api/tickets').set('x-user-id', rae._id.toString()).query({ priority: 'high' })
