@@ -35,7 +35,11 @@ npm run migrate
 npm run dev
 ```
 
-`.env.example` points `DATABASE_URL` at `postgres://postgres:postgres@127.0.0.1:5432/ledger`. Set `OUTBOX_TARGET_URL` to enable the relay's poll loop (see `src/outbox/README.md`).
+API on `http://localhost:5002`, which does not collide with anything else in this repo (`mern-shop` is 5000, `mern-tickets` and `mern-movies` both default to 5001).
+
+`.env.example` points `DATABASE_URL` at `postgres://postgres:postgres@127.0.0.1:5432/ledger` and ships `OUTBOX_TARGET_URL` empty. That is deliberate: with no target set, `src/index.js` never starts the relay's `setInterval` at all, so the app runs fine with nothing on the receiving end and outbox rows simply accumulate unpublished. Set it to enable delivery (see [`src/outbox/README.md`](src/outbox/README.md), which ships a fake target you can point it at).
+
+`npm run migrate` creates the `ledger` database's schema but the database itself must exist first; `docker exec mern-postgres createdb -U postgres ledger` if it does not. Unlike the three Mongo apps, there is no `seed` script — the domain has no fixtures, and every guide's Try it section creates the rows it needs.
 
 ## Test
 
@@ -44,7 +48,7 @@ npm test        # bootstraps and truncates its own ledger_test database on every
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-40 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
+41 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
 
 ## Topics and their READMEs
 
