@@ -18,7 +18,7 @@ Why two mechanisms instead of one: a per-user block is durable against the user 
    Two things about that normalization are worth being precise about, because both are places where a convention is being treated as a rule. First, RFC 5321 §2.4 says "the local-part of a mailbox **MUST BE** treated as case sensitive", and §2.3.11 says "the local-part MUST be interpreted and assigned semantics only by the host specified in the domain part of the address". Lowercasing the whole address, and stripping `+tags` for *every* domain rather than only for providers known to use that convention, are both technically outside what the standard permits — a domain is free to run `user+one@` and `user@` as different mailboxes, and this code would collapse them. Universal practice, but not standard-conformant, and the direction of the error matters: over-normalizing makes a block *broader* than intended, which risks catching an innocent party, whereas under-normalizing lets an attacker through. Second, the dot-stripping is correctly scoped: Google documents that "dots don't matter in Gmail addresses", but this is a Gmail behaviour and applying it to other domains would be wrong.
 
    The same normalization is also not the one the rate limiter uses. `app.js:15-16` builds limiter keys with a bare `.toLowerCase()`. This app gets away with the mismatch only because `users.findByEmail` is itself an exact `findOne({ email })` with no normalization at all, so an aliased address never resolves to an account in the first place — the login path never reaches `isBlockedEmail` with a `+tag` on it. Three different notions of "same email" in one codebase is one too many; the reason to notice it here is that the moment user lookup starts normalizing, the mismatch turns into a real gap.
-4. **Enforcement points check account identity, never a checkout-supplied value**: `services/auth.js:11` checks `user.blockedAt` and `isBlockedEmail(user.email)` — the account's *own*, database-backed email — after the password already matched, and — if blocked — throws the exact same `UnauthorizedError('invalid credentials')` (401) as a wrong password (`services/auth.js:10`), so a login attempt against a blocked account is indistinguishable from a login attempt with the wrong password. `services/orders.js:15` runs the identical check — `user.blockedAt` or `isBlockedEmail(user.email)` — before the cart is ever touched, and throws `ForbiddenError('account is not available')` (403, added to `middleware/error.js`) if either is true, so a refused order leaves the cart exactly as it was. Login's 401 and order placement's 403 differ in status and text quite deliberately: login folds a blocked account into the same response as a wrong password because there is a password-shaped response to hide inside; order placement has no such response to borrow, so it uses its own distinct, still-uninformative message instead. The checkout-supplied `customer.email` is deliberately **not** checked here — see the note below on where that value is actually evaluated.
+4. **Enforcement points check account identity, never a checkout-supplied value**: `services/auth.js:22` checks `user.blockedAt` and `isBlockedEmail(user.email)` — the account's *own*, database-backed email — after the password already matched, and — if blocked — throws the exact same `UnauthorizedError('invalid credentials')` (401) as a wrong password (`services/auth.js:21`), so a login attempt against a blocked account is indistinguishable from a login attempt with the wrong password. `services/orders.js:15` runs the identical check — `user.blockedAt` or `isBlockedEmail(user.email)` — before the cart is ever touched, and throws `ForbiddenError('account is not available')` (403, added to `middleware/error.js`) if either is true, so a refused order leaves the cart exactly as it was. Login's 401 and order placement's 403 differ in status and text quite deliberately: login folds a blocked account into the same response as a wrong password because there is a password-shaped response to hide inside; order placement has no such response to borrow, so it uses its own distinct, still-uninformative message instead. The checkout-supplied `customer.email` is deliberately **not** checked here — see the note below on where that value is actually evaluated.
 5. **Admin surface**: `controllers/blocks.js:12-16` (`requireAdmin`) compares the `x-admin-token` request header against `process.env.ADMIN_TOKEN` using `crypto.timingSafeEqual` (`controllers/blocks.js:5-10`) rather than `!==`, so a wrong guess cannot be distinguished by response timing — the shared secret is already weak on its own, and there's no reason to add a timing side channel on top of it. It throws `UnauthorizedError` on a missing, wrong, or unconfigured token. `POST /api/blocks` creates a `BlockEntry` (`controllers/blocks.js:18-23`) with `createdBy` taken from an `x-admin-name` header (defaulting to `'admin'`) and `createdAt` defaulted by the schema — that's the audit record. `DELETE /api/blocks/:id` removes an entry (`controllers/blocks.js:25-29`), and its own request is itself only possible with a valid admin token, so unblocking is exactly as gated as blocking.
 
 **Why the account gate ignores the checkout email**: an earlier version of this code checked `isBlockedEmail(customer.email)` at the order-placement gate instead of `user.email`. That was a real bypass — a blocked account could place an order freely just by typing a different email into the checkout form, since nothing about the *account* was ever consulted. It also made the fraud scorer's `BLOCKED_DOMAIN` signal permanently dead: any blocked-domain checkout email was already rejected earlier (with the wrong message) before scoring ever ran. The fix gives each layer exactly one job: this blocklist enforces identity (is *this account* blocked, by itself or by a pattern matching its own email) at a hard, unconditional gate; the checkout-supplied email is evaluated only by the fraud scorer's `BLOCKED_DOMAIN` signal (see [`../fraud/README.md`](../fraud/README.md)), which weighs it alongside other signals instead of hard-gating on it. A checkout email on a blocked domain is still refused end to end — just via `403 order could not be completed` from the fraud layer, not `403 account is not available` from this one.
@@ -58,7 +58,19 @@ Why two mechanisms instead of one: a per-user block is durable against the user 
 
 ## Try it
 
-Block the email address of an existing account and confirm both login and order placement refuse it, even when the order's checkout email is something else entirely (replace the admin token with whatever `ADMIN_TOKEN` is set to in your environment, and the email with a real seeded account's):
+Checkout needs a real access token now (see [`../session/README.md`](../session/README.md)), and a blocked account cannot log in to get one — so capture the token *first*, before you block anything, or the order step below returns `401` for the wrong reason. Start the server with an admin token set, since `.env.example` does not carry one:
+
+```bash
+JWT_SECRET=dev-secret ADMIN_TOKEN=change-me npm run dev
+```
+
+```bash
+curl -s -X POST http://localhost:5000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo@shop.test","password":"demo1234"}'
+```
+
+Keep the `accessToken` from that response. Now block the email address of that same account and confirm both login and order placement refuse it, even when the order's checkout email is something else entirely (replace the admin token with whatever `ADMIN_TOKEN` is set to in your environment, and the email with a real seeded account's):
 
 ```bash
 curl -i -X POST http://localhost:5000/api/blocks \
@@ -73,13 +85,19 @@ The response is `201` with the stored entry, and note that the `value` came back
 {"type":"email","value":"demo@shop.test","reason":"known fraud","createdBy":"victor","_id":"...","createdAt":"2026-08-15T10:53:47.586Z","__v":0}
 ```
 
-Save the returned `_id`, then try to log in as `demo@shop.test` — expect `401 { "error": "invalid credentials" }`, identical to a wrong password. Placing an order for that same account returns `403 { "error": "account is not available" }` even when the checkout email is somebody else's entirely, which is the whole point of gating on `user.email` rather than `customer.email`:
+Save the returned `_id`, then try to log in as `demo@shop.test` — expect `401 { "error": "invalid credentials" }`, identical to a wrong password. Placing an order with the access token you captured before the block returns `403 { "error": "account is not available" }` even when the checkout email is somebody else's entirely, which is the whole point of gating on `user.email` rather than `customer.email`:
 
 ```bash
+curl -s -X POST http://localhost:5000/api/cart/cart-1/items \
+  -H 'Content-Type: application/json' -d '{"productId":"<a seeded product id>","qty":1}'
+
 curl -s -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
-  -d '{"cartId":"cart-1","userId":"<the blocked account id>","customer":{"name":"Ada","email":"someone.else@elsewhere.test","address":"1 Main Street"}}'
+  -H 'Authorization: Bearer <the accessToken from before the block>' \
+  -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"someone.else@elsewhere.test","address":"1 Main Street"}}'
 ```
+
+That the block bites even with a still-valid access token is worth pausing on: `requireAuth` never queries the database, so the token itself is not what stops the order — `services/orders.js:15` re-reads the account and refuses it. Identity comes from the token, current account *state* comes from the database on every call.
 
 Then remove the block:
 
@@ -100,23 +118,28 @@ curl -i -X POST http://localhost:5000/api/blocks \
 
 Expect `401 { "error": "invalid admin token" }` — the same response as a wrong token, and as a server with no `ADMIN_TOKEN` configured at all.
 
-Now demonstrate the subdomain gap, which is the most useful thing in this file to see for yourself. Block a domain, then place an order with a checkout email on a subdomain of it:
+Now demonstrate the subdomain gap, which is the most useful thing in this file to see for yourself. Unblock the account first (the previous step's `DELETE`), log in again for a fresh `accessToken`, then block a *domain* and place an order with a checkout email on a subdomain of it. Note the domain block does not touch the account placing the order — only the checkout email it supplies:
 
 ```bash
 curl -s -X POST http://localhost:5000/api/blocks \
   -H 'Content-Type: application/json' -H 'x-admin-token: change-me' \
   -d '{"type":"domain","value":"fraud.test","reason":"disposable"}'
 
-curl -s -X POST http://localhost:5000/api/orders \
-  -H 'Content-Type: application/json' \
-  -d '{"cartId":"cart-1","userId":"<a real user id>","customer":{"name":"Ada","email":"buyer@fraud.test","address":"1 Main Street"}}'
+curl -s -X POST http://localhost:5000/api/cart/cart-d/items \
+  -H 'Content-Type: application/json' -d '{"productId":"<a seeded product id>","qty":1}'
 
 curl -s -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
-  -d '{"cartId":"cart-1","userId":"<a real user id>","customer":{"name":"Ada","email":"buyer@mail.fraud.test","address":"1 Main Street"}}'
+  -H 'Authorization: Bearer <accessToken>' \
+  -d '{"cartId":"cart-d","customer":{"name":"Ada","email":"buyer@fraud.test","address":"1 Main Street"}}'
+
+curl -s -X POST http://localhost:5000/api/orders \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <accessToken>' \
+  -d '{"cartId":"cart-d","customer":{"name":"Ada","email":"buyer@mail.fraud.test","address":"1 Main Street"}}'
 ```
 
-The first order is refused with `403 { "error": "order could not be completed" }` — from the fraud scorer's `BLOCKED_DOMAIN` signal, not from this layer. The second is created. One extra label is the entire evasion.
+The first order is refused with `403 { "error": "order could not be completed" }` — from the fraud scorer's `BLOCKED_DOMAIN` signal, not from this layer — and because a denied order leaves the cart untouched, the second request finds the same cart still full and is created. One extra label is the entire evasion.
 
 ## Further reading
 
