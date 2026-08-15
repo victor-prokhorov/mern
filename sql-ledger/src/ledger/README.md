@@ -37,6 +37,7 @@ The "exactly two entries summing to zero" invariant is not only tested, it is **
 - No multi-currency conversion. `accounts.currency` is stored per account but nothing here converts between currencies or rejects a transfer between two different-currency accounts.
 - No reversal/void transfer type — a mis-posted transfer cannot be corrected with a compensating entry, only observed.
 - No `SERIALIZABLE` isolation or explicit locking is actually used anywhere in this codebase, because there is no invariant here that needs it yet.
+- **The entries-sum-to-zero trigger has a blind spot: a transfer with *zero* entries.** `entries_balance_check` is a row-level trigger `AFTER INSERT OR UPDATE OR DELETE ON entries` — it only ever runs when a row in `entries` actually changes. A `transfers` row inserted with no matching `entries` at all (confirmed directly: `INSERT INTO transfers (reference, status) VALUES (...)` with nothing inserted into `entries` afterward commits with no error) never fires the trigger, because there is no row event for it to fire on. This is a pre-existing gap in the enforcement, not a regression — the invariant is enforced *given* at least one entries change, not made total over every possible transfers row. `createTransfer` never produces this shape (it always inserts exactly two entries in the same transaction as the transfer row), but nothing at the schema level stops a `transfers` row from existing alone.
 
 ## Try it
 
