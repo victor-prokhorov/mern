@@ -1,6 +1,7 @@
 import { withTransaction } from '../db.js'
 import * as transfersRepo from '../repositories/transfers.js'
 import * as entriesRepo from '../repositories/entries.js'
+import * as accountsRepo from '../repositories/accounts.js'
 import { BadRequestError, ConflictError } from '../middleware/error.js'
 
 function assertValidTransferInput({ reference, fromAccountId, toAccountId, amountMinor }) {
@@ -17,6 +18,8 @@ export async function createTransfer({ reference, fromAccountId, toAccountId, am
       const transfer = await transfersRepo.create(client, { reference, status: 'completed' })
       await entriesRepo.create(client, { transferId: transfer.id, accountId: fromAccountId, amountMinor: -amountMinor })
       await entriesRepo.create(client, { transferId: transfer.id, accountId: toAccountId, amountMinor })
+      await accountsRepo.adjustBalance(client, fromAccountId, -amountMinor)
+      await accountsRepo.adjustBalance(client, toAccountId, amountMinor)
       return transfer
     })
   } catch (err) {

@@ -11,6 +11,6 @@ export async function createAccount({ name, currency }) {
 export async function getBalance({ accountId }) {
   const account = await accountsRepo.findById(pool, accountId)
   if (!account) throw new NotFoundError('account not found')
-  const balanceMinor = await accountsRepo.computeDerivedBalance(pool, accountId)
+  const balanceMinor = await accountsRepo.getStoredBalance(pool, accountId)
   return { accountId: account.id, balanceMinor: balanceMinor.toString() }
 }

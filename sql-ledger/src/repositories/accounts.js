@@ -1,6 +1,6 @@
 export async function create(client, { name, currency }) {
   const { rows } = await client.query(
-    'INSERT INTO accounts (name, currency) VALUES ($1, $2) RETURNING id, name, currency, created_at',
+    'INSERT INTO accounts (name, currency, balance_minor) VALUES ($1, $2, 0) RETURNING id, name, currency, balance_minor, created_at',
     [name, currency]
   )
   return rows[0]
