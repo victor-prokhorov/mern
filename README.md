@@ -70,13 +70,14 @@ npm run seed
 npm run dev
 ```
 
-Two things `.env.example` does not tell you:
+One thing `.env.example` alone does not tell you:
 
 - **`mern-shop` will not start without `JWT_SECRET`.** `src/session/tokens.js`
-  throws at import rather than fall back to a hardcoded signing key, so
-  `npm run dev` after `cp .env.example .env` fails with
-  `JWT_SECRET environment variable must be set`. Use
-  `JWT_SECRET=dev-secret npm run dev`. The blocklist guide additionally needs
+  throws at import rather than fall back to a hardcoded signing key.
+  `mern-shop/server/.env.example` ships a `JWT_SECRET` placeholder so
+  `cp .env.example .env` followed by `npm run dev` works verbatim, but the
+  placeholder is exactly that — replace it with a real secret before this
+  app ever runs anywhere but a laptop. The blocklist guide additionally needs
   `ADMIN_TOKEN` and the password-reset guide needs `EXPOSE_RESET_TOKEN=1`; see
   [mern-shop/README.md](mern-shop/README.md) for the table.
 

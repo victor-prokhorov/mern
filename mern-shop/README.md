@@ -25,19 +25,21 @@ cd server
 npm install
 cp .env.example .env
 npm run seed
-JWT_SECRET=dev-secret npm run dev
+npm run dev
 ```
 
 API on `http://localhost:5000`.
 
 ### Environment
 
-`.env.example` covers `PORT` and `MONGO_URI` only. Three more variables matter,
-and the first one is not optional:
+`.env.example` covers `PORT`, `MONGO_URI`, and a placeholder `JWT_SECRET` —
+the placeholder is enough to get the server running locally, but replace it
+with a real, random secret before this app runs anywhere but a laptop. Two
+more variables matter beyond what `.env.example` ships:
 
 | Variable | Needed for | If unset |
 |---|---|---|
-| `JWT_SECRET` | signing and verifying access tokens | **the server refuses to start** — `src/session/tokens.js` throws at import rather than fall back to a hardcoded secret |
+| `JWT_SECRET` | signing and verifying access tokens | **the server refuses to start** — `src/session/tokens.js` throws at import rather than fall back to a hardcoded secret. `.env.example` ships a placeholder so this is covered by default. |
 | `ADMIN_TOKEN` | the `POST`/`DELETE /api/blocks` admin surface | every admin request gets `401`, including one sending the right token |
 | `EXPOSE_RESET_TOKEN=1` | reading a password-reset token back out of the API response, since there is no mail sender | the reset flow works but there is no way to obtain a token by hand |
 
