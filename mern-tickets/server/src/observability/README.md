@@ -63,7 +63,7 @@ curl -s -X POST http://localhost:5001/api/tickets \
 ```
 
 ```
-x-request-id: demo-request-1
+X-Request-Id: demo-request-1
 ```
 
 The server's log line for the webhook failure that follows (fire-and-forget, so it lands a moment after the response) carries the same id, live, copied verbatim from a real run:

@@ -14,7 +14,7 @@ What counts as a failure is not the breaker's decision — `isFailure(err)` (`sr
 
 `createNotifier` (`src/notifier/webhook.js:24-64`) forwards only the actual breaker options it was given (`now`, `windowMs`, `openMs`, `minimumThroughput`, `failureRateThreshold`, `halfOpenMaxCalls`, `successesToClose`, `src/notifier/webhook.js:26-36`) into `createCircuitBreaker`, builds one `post()` that calls `fetch` with `signal: AbortSignal.timeout(timeoutMs)` (default 1000ms, `src/notifier/webhook.js:4,37-46`) and throws a `WebhookResponseError` carrying the status on any non-2xx response, and one `notify()` that is a no-op when no URL is configured (`src/notifier/webhook.js:48-49`) and otherwise calls `breaker.call(() => post(url, event))` inside a `try/catch` that swallows and logs everything (`src/notifier/webhook.js:50-54`) — `notify()` never rejects, by construction, which is what makes it safe to call without `await`. The module builds exactly one such notifier at load time (`src/notifier/webhook.js:66`) and exports its `notify`/`stats`/`reset` as the app-wide singleton — "one breaker per dependency, per process." `createNotifier` is also exported so tests can build an isolated instance with an injected `now`, a fake `url`, and a short `timeoutMs`, without touching `process.env` or waiting on real timers (`test/notifier.test.js`), and the singleton's `reset()` lets the two tests that exercise the real singleton through HTTP reset it in a `beforeEach` instead of depending on each other's leftover state. `src/services/tickets.js:10,55,96` is the only caller of the singleton: `create()` and `transitionStatus()` each call `notify(...)` after the write is already durable, without `await`, exactly the fail-open call `src/hooks/README.md` describes for moderation — except here there isn't even a synchronous window where a slow webhook could stall the response, because the call is never on the request's critical path at all. `test/notifier.test.js` asserts this directly against a fake upstream that answers 200 only after a 300ms delay: the `POST /api/tickets` response comes back in well under 150ms regardless.
 
-A rejection while `open` carries `state`, `retryAfterMs`, and a `status` of 503 (`src/circuitBreaker/breaker.js:4-7`); the shared `errorHandler` (`src/middleware/error.js:41-44`) maps any 503 the same way it already mapped 429 — status code plus a `Retry-After` header. Nothing in this app currently lets that error reach a response (the notifier swallows it), so this mapping exists for the *next* caller of this breaker that isn't fire-and-forget, and is covered directly in `test/circuitBreaker.test.js`.
+A rejection while `open` carries `state`, `retryAfterMs`, and a `status` of 503 (`src/circuitBreaker/breaker.js:4-7`); the shared `errorHandler` (`src/middleware/error.js:57-60`) maps any 503 the same way it already mapped 429 — status code plus a `Retry-After` header. Nothing in this app currently lets that error reach a response (the notifier swallows it), so this mapping exists for the *next* caller of this breaker that isn't fire-and-forget, and is covered directly in `test/circuitBreaker.test.js`.
 
 ## The core concepts
 
@@ -48,7 +48,7 @@ A rejection while `open` carries `state`, `retryAfterMs`, and a `status` of 503 
 - Any of the extra resilience4j states (`FORCED_OPEN`, `DISABLED`, `METRICS_ONLY`) for manually overriding the breaker during an incident or a deploy.
 - Per-call configuration or multiple breaker instances sharing a policy registry — this app builds exactly one breaker for exactly one dependency; a real client library manages many.
 - Coordinated/shared breaker state across instances — deliberately out of scope; see "Per-process state" above for why that is usually the right call anyway, and what it costs when it isn't.
-- Structured, per-transition metrics export (a counter or histogram a monitoring system can alert on) — transitions go to `console.log`/`console.error`, not a metrics pipeline.
+- Structured, per-transition metrics export (a counter or histogram a monitoring system can alert on). Transitions do go through the structured logger now (`logger.info`, `src/notifier/webhook.js:20-22`), so each one is a JSON line carrying `requestId`/`userId`/`route` from [`../observability/README.md`](../observability/README.md) — but a log line is not a metric. Nothing increments a counter, so there is nothing to build a rate alert or a dashboard panel on; an operator would have to grep logs to notice the webhook has been open for an hour. The app has a `/metrics` endpoint already; the breaker is simply not wired into it.
 - Retry, bulkhead, load shedding, and hedged requests themselves — this module only implements the breaker; the neighbouring patterns are named and scoped in the core concepts above but none of them exist in this codebase.
 - A `FORCED_OPEN`-style manual override for an operator to trip the breaker ahead of a known-bad deploy, before any real failure has been observed.
 - Trial identity in half-open admission, when `halfOpenMaxCalls > 1`. `halfOpenInFlight` is a bare counter of how many trials are currently admitted, not a set of *which* trials — and `transition()` zeroes it unconditionally on any state change (`src/circuitBreaker/breaker.js:49-50`), including one caused by a *different* trial finishing first. If trial A fails while sibling trial B (only possible with `halfOpenMaxCalls` of 2 or more) is still in flight, A's failure re-opens the breaker and zeroes the counter immediately; once `openMs` elapses again and the breaker cycles back to `half-open`, a fresh quota is admitted for new trials while B — a straggler from the previous epoch — is still running against the dependency, uncounted. The dependency can end up fielding more concurrent trial calls than `halfOpenMaxCalls` was ever meant to allow. Unreachable at this app's default of `halfOpenMaxCalls: 1` (there is never a sibling to strand), so this is a genuine known limitation, not a live bug like the one in the worked example above — but it is the same root shape: a count incremented on one path and only reliably cleared on a narrower one. A production implementation tracks trial identity instead of a shared counter — an admission token or id handed out when a trial starts and checked back in specifically when *that* trial ends — so a straggler from one epoch can't be silently uncounted against the next.
@@ -89,18 +89,16 @@ curl -s -o /dev/null -w 'l4 %{http_code}\n' -X POST http://localhost:5001/api/ti
 curl -s -o /dev/null -w 'l5 %{http_code}\n' -X POST http://localhost:5001/api/tickets -H 'Content-Type: application/json' -H 'x-user-id: <lee id>' -d '{"title":"l5","body":"trip body 5","priority":"normal"}'
 ```
 
-Every one of the five returns `201` — ticket creation never sees the webhook at all — and this is the real server log for that batch, copied verbatim:
+Every one of the five returns `201` — ticket creation never sees the webhook at all — and this is the real server log for that batch, copied verbatim (the lines are JSON because the app logs through [`../observability/README.md`](../observability/README.md)'s structured logger; `time` and the first two failures are trimmed here for width):
 
 ```
-webhook notify failed: webhook responded 500
-webhook notify failed: webhook responded 500
-webhook notify failed: webhook responded 500
-webhook notify failed: webhook responded 500
-webhook breaker closed -> open stats={"state":"open","total":5,"failures":5,"successes":0}
-webhook notify failed: webhook responded 500
+{"level":"error","msg":"webhook notify failed","requestId":"b6d18943-...","userId":"...cb8","route":"/api/tickets","error":"webhook responded 500"}
+{"level":"error","msg":"webhook notify failed","requestId":"6392ea0e-...","userId":"...cb8","route":"/api/tickets","error":"webhook responded 500"}
+{"level":"info","msg":"webhook breaker state changed","requestId":"03b00a64-...","userId":"...cb8","route":"/api/tickets","from":"closed","to":"open","stats":{"state":"open","total":5,"failures":5,"successes":0}}
+{"level":"error","msg":"webhook notify failed","requestId":"03b00a64-...","userId":"...cb8","route":"/api/tickets","error":"webhook responded 500"}
 ```
 
-Read that ordering carefully: calls one through four each just fail (`notify failed`), and the transition line appears *before* the fifth call's own `notify failed` — because `record()` runs, decides to trip, and logs the transition, all inside `call()`'s `catch` block, before the error is rethrown up to `notify()`'s own `catch` that logs the failure. The fifth call is the one that tripped the breaker, and it still reports its own failure after announcing the trip.
+Two things to read carefully there. First the ordering: calls one through four each just fail, and the transition line appears *before* the fifth call's own `notify failed` — because `record()` runs, decides to trip, and logs the transition, all inside `call()`'s `catch` block, before the error is rethrown up to `notify()`'s own `catch` that logs the failure. The fifth call is the one that tripped the breaker, and it still reports its own failure after announcing the trip. Second, the transition line and the failure line beneath it share a `requestId` (`03b00a64`), and it is the id of the fifth `POST /api/tickets` — the request-scoped context propagates into a fire-and-forget call made after the response was already computed, because `AsyncLocalStorage` follows the async continuation rather than the response. That is the single most useful thing correlation buys here: an operator who finds the breaker tripping can jump straight to the request that tripped it.
 
 Now create one more ticket as a different seeded reporter (so you're not blocked by that user's own throttle burst) — still `201`, breaker still `open`:
 
@@ -113,8 +111,8 @@ curl -s -o /dev/null -w 'sam-open %{http_code}\n' -X POST http://localhost:5001/
 Wait past `windowMs` (10s) before running that curl — not just past `openMs` (5s) — so the five failures that tripped the breaker have aged out of the window by the time you see the next log line. `openMs` only governs when the breaker is *willing* to try again; it says nothing about what `stats()` reports when it does. If you only wait `openMs` and run this within the next few seconds, the trial still happens (the breaker only needs `openMs` to attempt it), but the transition log will still show `total:5,failures:5` — the same five failures, not yet pruned — which can look like the earlier trip repeating itself rather than a fresh decision. Waiting past `windowMs` is what gets you the pruned, `total:0` version below:
 
 ```
-webhook breaker open -> half-open stats={"state":"half-open","total":0,"failures":0,"successes":0}
-webhook breaker half-open -> open stats={"state":"open","total":1,"failures":1,"successes":0}
+{"level":"info","msg":"webhook breaker state changed","from":"open","to":"half-open","stats":{"state":"half-open","total":0,"failures":0,"successes":0}}
+{"level":"info","msg":"webhook breaker state changed","from":"half-open","to":"open","stats":{"state":"open","total":1,"failures":1,"successes":0}}
 ```
 
 Against the still-failing upstream, this half-open trial fails and reopens, restarting the clock. That `total:0` on the way into `half-open` is `stats()`'s pruning at work: enough real time passed that the five failures which tripped the breaker had already aged out of the window before this transition was logged — reporting them again would have been a stale echo of an incident that, from the window's point of view, was already over. The `half-open -> open` line right after it is fresh: `total:1` is this trial's own failure, just recorded.
@@ -129,8 +127,8 @@ curl -s -o /dev/null -w 'sam-heal %{http_code}\n' -X POST http://localhost:5001/
 ```
 
 ```
-webhook breaker open -> half-open stats={"state":"half-open","total":0,"failures":0,"successes":0}
-webhook breaker half-open -> closed stats={"state":"closed","total":0,"failures":0,"successes":0}
+{"level":"info","msg":"webhook breaker state changed","from":"open","to":"half-open","stats":{"state":"half-open","total":0,"failures":0,"successes":0}}
+{"level":"info","msg":"webhook breaker state changed","from":"half-open","to":"closed","stats":{"state":"closed","total":0,"failures":0,"successes":0}}
 ```
 
 Closed, window cleared, back to normal — and every single `POST /api/tickets` call across this whole sequence returned `201`, including the ones made while the breaker was `open`.
