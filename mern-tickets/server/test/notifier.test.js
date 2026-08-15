@@ -2,7 +2,7 @@ import http from 'node:http'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
-import { createNotifier, notify as notifySingleton, stats as singletonStats } from '../src/notifier/webhook.js'
+import { createNotifier, notify as notifySingleton, stats as singletonStats, reset as resetSingleton } from '../src/notifier/webhook.js'
 import { seedUsers } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
 
@@ -105,8 +105,31 @@ describe('webhook notifier', () => {
     expect(notifier.stats().total).to.equal(0)
   })
 
+  it('does not wedge open after a half-open trial gets a response isWebhookFailure excludes', async () => {
+    let currentTime = 0
+    let callCount = 0
+    const server = await startFakeUpstream((req, res) => {
+      callCount += 1
+      if (callCount === 1) { res.writeHead(500); res.end(); return }
+      if (callCount === 2) { res.writeHead(400); res.end(); return }
+      res.writeHead(200)
+      res.end()
+    })
+    const notifier = createNotifier({ url: urlFor(server), now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 1000 })
+    await notifier.notify({ type: 'ticket:created' })
+    currentTime = 1000
+    await notifier.notify({ type: 'ticket:created' })
+    currentTime = 2000
+
+    await notifier.notify({ type: 'ticket:created' })
+
+    expect(notifier.state).to.equal('closed')
+    await stopFakeUpstream(server)
+  })
+
   describe('wired into ticket creation', () => {
     useTestDb()
+    beforeEach(() => resetSingleton())
 
     it('sends a webhook notification when a ticket is created, without blocking the response', async () => {
       let requestCount = 0
