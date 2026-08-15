@@ -28,14 +28,14 @@ Five Mongoose models live in `server/src/models/`:
 Every Mongoose call lives in `server/src/repositories/` (`actors.js`,
 `movies.js`, `users.js`, `ratings.js`, `watches.js`). Every rule about
 who can do what lives in `server/src/services/`. `create` in
-`server/src/services/movies.js:18-25` is the shape every write
+`server/src/services/movies.js:19-31` is the shape every write
 follows: check the caller is allowed (`requireAdmin`, defined once in
 `server/src/services/authorize.js` and shared by every service that
 needs it), validate the input, then delegate to the repository.
 Controllers (`server/src/controllers/`) only translate between HTTP
 and services — see `server/src/controllers/movies.js`. Routes
 (`server/src/routes/`) only wire paths to controller functions and are
-mounted in `server/src/app.js:16-19`.
+mounted in `server/src/app.js:18-23`.
 
 Caller identity is the `x-user-id` header, read once by
 `server/src/middleware/currentUser.js` and attached to `req.userId`.
@@ -47,11 +47,17 @@ fan-out have someone to compute a personalized answer for. See
 layer looks like.
 
 `POST /api/ratings` and `POST /api/watches` both upsert
-(`server/src/repositories/ratings.js:3-8`,
-`server/src/repositories/watches.js:3-8`): rating the same movie twice
-replaces the stored value rather than creating a second row, and the
-unique index is what makes that safe even under a race — the insert
-either updates the one existing row or creates it, never both.
+(`server/src/repositories/ratings.js:3-9`,
+`server/src/repositories/watches.js:3-9`): rating the same movie twice
+replaces the stored value rather than creating a second row. The
+unique index is what makes a race between two concurrent upserts safe
+in the sense that matters: it makes a duplicate row impossible, not
+that both requests are guaranteed to succeed. If two upserts for the
+same `{ user, movie }` race each other, MongoDB lets exactly one of
+them through and the other fails with a duplicate-key error (code
+`11000`) rather than creating a second row. This app does not retry
+that loser — it surfaces as a 500 — which is a gap worth knowing about
+before relying on this pattern under real concurrent write load.
 
 ## The core concepts
 
@@ -122,26 +128,26 @@ npm run seed
 npm start
 
 curl http://localhost:5001/api/movies
-curl http://localhost:5001/api/movies?genre=scifi
+curl "http://localhost:5001/api/movies?genre=scifi"
 curl http://localhost:5001/api/actors
 
 curl -X POST http://localhost:5001/api/actors \
   -H 'Content-Type: application/json' \
-  -H "x-user-id: <admin user id from the seed>" \
+  -H "x-user-id: <admin user id from the seed output>" \
   -d '{"name":"Idris Elba"}'
 
 curl -X POST http://localhost:5001/api/movies \
   -H 'Content-Type: application/json' \
-  -H "x-user-id: <admin user id from the seed>" \
-  -d '{"title":"New Release","genres":["action"],"cast":["<actor id>"],"averageRating":8,"releasedAt":"2024-01-01"}'
+  -H "x-user-id: <admin user id from the seed output>" \
+  -d '{"title":"New Release","genres":["action"],"cast":["<actor id from GET /api/actors>"],"averageRating":8,"releasedAt":"2024-01-01"}'
 
 curl -X POST http://localhost:5001/api/ratings \
   -H 'Content-Type: application/json' \
-  -H "x-user-id: <user id>" \
-  -d '{"movieId":"<movie id>","value":8}'
+  -H "x-user-id: <user id from the seed output>" \
+  -d '{"movieId":"<movie id from GET /api/movies>","value":8}'
 
 curl -X POST http://localhost:5001/api/watches \
   -H 'Content-Type: application/json' \
-  -H "x-user-id: <user id>" \
-  -d '{"movieId":"<movie id>"}'
+  -H "x-user-id: <user id from the seed output>" \
+  -d '{"movieId":"<movie id from GET /api/movies>"}'
 ```

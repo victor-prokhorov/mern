@@ -11,7 +11,7 @@ genres they tend to like.
 ## How it works here
 
 The ranking algorithm lives in a single pure function,
-`rank(candidates, signals)` in `server/src/recommendations/rank.js:32-44`.
+`rank(candidates, signals)` in `server/src/recommendations/rank.js:32-48`.
 It takes an array of movie-like objects and a `signals` object —
 `{ likedGenres, dislikedGenres, watchedGenres }` — and returns a sorted,
 capped, explained list. It touches no database and no Express; every
@@ -161,7 +161,7 @@ rules applied.
 
 **Determinism, and why it matters for both testing and trust.**
 `rank()` sorts by score descending, then by `_id` ascending on a tie
-(`rank.js:39-42`), so the same inputs always produce the same output —
+(`rank.js:39-46`), so the same inputs always produce the same output —
 proven directly by calling it twice with identical arguments in the
 test suite. This matters for testing because a flaky ordering makes
 assertions about "the top result" or "exactly these 10 ids"
@@ -178,8 +178,9 @@ recommended, what fraction did the user actually engage with),
 recall@k (of everything the user engaged with, what fraction was in
 the top k recommended), and NDCG (normalized discounted cumulative
 gain — like precision, but it also rewards getting the *order* right,
-penalizing a good item buried at position 9 more gently than one
-missing entirely, but still less than one it puts at position 1).
+discounting a relevant item's contribution the further down the list
+it appears, so the same good match is worth far more at position 1
+than buried at position 9).
 Offline metrics are cheap and safe but can't measure things like
 "did showing this recommendation change what the user actually did,"
 which is what online A/B testing measures directly, at the cost of
@@ -243,7 +244,7 @@ npm run seed
 npm start
 
 curl http://localhost:5001/api/recommendations \
-  -H "x-user-id: <a seeded user id>"
+  -H "x-user-id: <a user id from the seed output>"
 ```
 
 A user with no ratings or watches gets the top-rated eligible movies

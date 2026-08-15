@@ -209,16 +209,16 @@ this notification type entirely), none of which exist here.
 npm run seed
 npm start
 
-curl -X POST http://localhost:5001/api/actors/<actor id>/follow \
-  -H "x-user-id: <user id>"
+curl -X POST http://localhost:5001/api/actors/<actor id from GET /api/actors>/follow \
+  -H "x-user-id: <user id from the seed output>"
 
 curl -X POST http://localhost:5001/api/movies \
   -H 'Content-Type: application/json' \
-  -H "x-user-id: <admin user id>" \
-  -d '{"title":"New Release","genres":["action"],"cast":["<actor id>"],"averageRating":8,"releasedAt":"2024-01-01"}'
+  -H "x-user-id: <admin user id from the seed output>" \
+  -d '{"title":"New Release","genres":["action"],"cast":["<actor id from GET /api/actors>"],"averageRating":8,"releasedAt":"2024-01-01"}'
 
-curl http://localhost:5001/api/notifications -H "x-user-id: <user id>"
+curl http://localhost:5001/api/notifications -H "x-user-id: <the same user id you followed with>"
 
-curl -X POST http://localhost:5001/api/notifications/<notification id>/read \
-  -H "x-user-id: <user id>"
+curl -X POST http://localhost:5001/api/notifications/<notification id from GET /api/notifications>/read \
+  -H "x-user-id: <the same user id>"
 ```

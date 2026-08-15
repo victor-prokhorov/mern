@@ -51,15 +51,24 @@ exists only so the recommender and the notification fan-out have a
 caller to compute a personalized answer for. See `mern-tickets` in this
 same monorepo for what a real authorization layer looks like.
 
-After seeding, look up the seeded admin's id (or any user's id) with
-`GET /api/movies` unauthenticated first to get movie/actor ids, then:
+There is no users endpoint, so user ids come from `npm run seed`'s own
+output — it prints the id and role of every user it creates:
+
+```
+seeded 12 actors, 25 movies, 3 users
+  admin: admin@movies.test -> 6a8032dc9b90fd244426dae9
+  user: fiona@movies.test -> 6a8032dc9b90fd244426daea
+  user: sam@movies.test -> 6a8032dc9b90fd244426daeb
+```
+
+Actor and movie ids come from the list endpoints, unauthenticated:
 
 ```
 curl http://localhost:5001/api/actors
 curl http://localhost:5001/api/movies
 
-curl http://localhost:5001/api/recommendations -H "x-user-id: <user id>"
+curl http://localhost:5001/api/recommendations -H "x-user-id: <user id from the seed output>"
 
 curl -X POST http://localhost:5001/api/actors/<actor id>/follow \
-  -H "x-user-id: <user id>"
+  -H "x-user-id: <user id from the seed output>"
 ```
