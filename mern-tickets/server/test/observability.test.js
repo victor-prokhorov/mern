@@ -12,6 +12,7 @@ import { register, run, reset as resetHooks } from '../src/hooks/registry.js'
 import { createCircuitBreaker } from '../src/circuitBreaker/breaker.js'
 import { reset as resetMetrics } from '../src/observability/metrics.js'
 import { createGracefulShutdown } from '../src/observability/shutdown.js'
+import { setReady, isReady } from '../src/observability/health.js'
 
 use(chaiHttp)
 
@@ -199,6 +200,22 @@ describe('observability', () => {
       const res = await request.execute(app).get('/healthz')
 
       expect(res).to.have.status(200)
+    })
+
+    it('passes readyz when Mongo is connected', async () => {
+      const res = await request.execute(app).get('/readyz')
+
+      expect(res).to.have.status(200)
+    })
+
+    it('setReady updates what isReady reports, which readyz then reflects', async () => {
+      setReady(false)
+
+      const res = await request.execute(app).get('/readyz')
+
+      expect(isReady()).to.equal(false)
+      expect(res).to.have.status(503)
+      setReady(true)
     })
 
     it('fails readyz when Mongo is disconnected while healthz still passes', async () => {
