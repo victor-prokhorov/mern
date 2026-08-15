@@ -42,10 +42,10 @@ describe('rate limiting', () => {
 
   it('blocks the 11th reset-password attempt in a window', async () => {
     for (let i = 0; i < 10; i++) {
-      const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant1' })
+      const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant-passphrase' })
       expect(res).to.have.status(400)
     }
-    const blocked = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant1' })
+    const blocked = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant-passphrase' })
 
     expect(blocked).to.have.status(429)
     expect(blocked.body).to.deep.equal({ error: 'too many requests' })
