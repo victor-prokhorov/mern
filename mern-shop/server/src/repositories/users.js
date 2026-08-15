@@ -15,3 +15,7 @@ export function deleteAll() {
 export function create(doc) {
   return User.create(doc)
 }
+
+export function updatePasswordHash(id, passwordHash) {
+  return User.updateOne({ _id: id }, { passwordHash })
+}
