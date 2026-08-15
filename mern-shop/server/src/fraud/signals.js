@@ -6,8 +6,8 @@ export const VELOCITY_THRESHOLD = 3
 export const HIGH_VALUE_THRESHOLD = 200
 export const QUANTITY_THRESHOLD = 10
 
-export function NEW_ACCOUNT({ user }) {
-  const triggered = Boolean(user?.createdAt) && Date.now() - new Date(user.createdAt).getTime() < NEW_ACCOUNT_WINDOW_MS
+export function NEW_ACCOUNT({ user, now }) {
+  const triggered = Boolean(user?.createdAt) && now - new Date(user.createdAt).getTime() < NEW_ACCOUNT_WINDOW_MS
   return { code: 'NEW_ACCOUNT', weight: 20, triggered, detail: triggered ? 'account is less than 24 hours old' : null }
 }
 
@@ -44,5 +44,6 @@ export function BLOCKED_DOMAIN({ stats }) {
 export const signalFns = [NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_DOMAIN]
 
 export function evaluateSignals(context) {
-  return signalFns.map((fn) => fn(context))
+  const now = context.now ?? Date.now()
+  return signalFns.map((fn) => fn({ ...context, now }))
 }

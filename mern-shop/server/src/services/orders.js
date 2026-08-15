@@ -12,7 +12,7 @@ export async function place({ cartId, userId, customer }) {
   if (!ObjectId.isValid(userId)) throw new BadRequestError('invalid user id')
   const user = await users.findById(userId)
   if (!user) throw new NotFoundError('user not found')
-  if (user.blockedAt || (await blocks.isBlockedEmail(customer?.email))) throw new ForbiddenError('account is not available')
+  if (user.blockedAt || (await blocks.isBlockedEmail(user.email))) throw new ForbiddenError('account is not available')
   const cart = await carts.findPopulated(cartId)
   if (!cart || cart.items.length === 0) throw new BadRequestError('cart is empty')
   if (cart.items.some((entry) => entry.product === null)) throw new BadRequestError('cart contains an unavailable product')
@@ -23,11 +23,12 @@ export async function place({ cartId, userId, customer }) {
     qty: entry.qty
   }))
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
+  const now = Date.now()
   const [recentOrderCount, isDomainBlocked] = await Promise.all([
-    orderStats.countRecentOrders(user._id, new Date(Date.now() - VELOCITY_WINDOW_MS)),
+    orderStats.countRecentOrders(user._id, new Date(now - VELOCITY_WINDOW_MS)),
     blocks.isBlockedEmail(customer?.email)
   ])
-  const signals = evaluateSignals({ user, cart: { items }, customer, stats: { recentOrderCount, isDomainBlocked } })
+  const signals = evaluateSignals({ user, cart: { items }, customer, stats: { recentOrderCount, isDomainBlocked }, now })
   const fraud = scoreSignals(signals)
   if (fraud.decision === 'deny') throw new ForbiddenError('order could not be completed')
   const order = await orders.create({ user: user._id, items, total, customer, status: fraud.decision === 'review' ? 'review' : 'pending', fraud })
