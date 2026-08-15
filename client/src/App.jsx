@@ -4,6 +4,8 @@ import Products from './pages/Products.jsx'
 import ProductDetail from './pages/ProductDetail.jsx'
 import Cart from './pages/Cart.jsx'
 import Login from './pages/Login.jsx'
+import Checkout from './pages/Checkout.jsx'
+import OrderDone from './pages/OrderDone.jsx'
 
 export default function App() {
   const [page, setPage] = useState({ name: 'products' })
@@ -26,6 +28,9 @@ export default function App() {
       {page.name === 'product' ? <ProductDetail id={page.id} setPage={setPage} /> : null}
       {page.name === 'login' ? <Login setPage={setPage} onSignedIn={setUser} notice={page.notice} /> : null}
       {page.name === 'cart' ? <Cart setPage={setPage} /> : null}
+      {page.name === 'checkout' && user ? <Checkout user={user} setPage={setPage} /> : null}
+      {page.name === 'checkout' && !user ? <Login setPage={setPage} onSignedIn={setUser} notice="Log in to place your order." /> : null}
+      {page.name === 'order' ? <OrderDone id={page.id} setPage={setPage} /> : null}
     </div>
   )
 }
