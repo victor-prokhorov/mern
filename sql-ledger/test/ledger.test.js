@@ -55,6 +55,22 @@ describe('ledger', () => {
     expect(res.body.balanceMinor).to.equal('700')
   })
 
+  it('enforces at the database level that a transfer\'s entries sum to zero, rejecting direct SQL tampering', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const { rows } = await pool.query("INSERT INTO transfers (reference, status) VALUES ($1, 'completed') RETURNING id", ['direct-tamper-1'])
+    const transferId = rows[0].id
+
+    let caught
+    try {
+      await pool.query('INSERT INTO entries (transfer_id, account_id, amount_minor) VALUES ($1, $2, $3)', [transferId, alice.id, 500])
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).to.not.equal(undefined)
+    expect(caught.message).to.include('do not sum to zero')
+  })
+
   it('stores a hostile reference value as data rather than executing it', async () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
