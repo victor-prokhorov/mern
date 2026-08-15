@@ -144,9 +144,11 @@ describe('sessions', () => {
     await request.execute(app).post('/api/auth/logout').send({ refreshToken: loginRes.body.refreshToken })
     const protectedApp = buildProtectedApp()
 
-    const res = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+    const whoami = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+    const refreshed = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: loginRes.body.refreshToken })
 
-    expect(res).to.have.status(200)
+    expect(whoami).to.have.status(200)
+    expect(refreshed).to.have.status(401)
   })
 
   it('rejects order placement with no Authorization header', async () => {

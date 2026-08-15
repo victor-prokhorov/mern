@@ -25,6 +25,7 @@ const testUserClaimRace = '64b7f0f0f0f0f0f0f0f0f0f6'
 const testUserStale = '64b7f0f0f0f0f0f0f0f0f0f7'
 const testUserLeaseFresh = '64b7f0f0f0f0f0f0f0f0f0f8'
 const testUserLogging = '64b7f0f0f0f0f0f0f0f0f0f9'
+const testUserFencing = '64b7f0f0f0f0f0f0f0f0f0fa'
 
 const customer = { name: 'Ada', email: 'ada@shop.test', address: '1 Main Street' }
 
@@ -69,6 +70,23 @@ function buildAppWithStoreAndStatus(store, status) {
   built.use(express.json())
   built.use('/orders', idempotency({ store, userIdFrom: (req) => req.get('x-test-user') }), (req, res) => {
     res.status(status).json({ ok: true })
+  })
+  return built
+}
+
+function buildExecutionCountingApp(leaseMs, counterRef) {
+  const built = express()
+  built.use(express.json())
+  built.use('/orders', idempotency({ userIdFrom: (req) => req.get('x-test-user'), leaseMs }), async (req, res) => {
+    counterRef.count += 1
+    const myExecution = counterRef.count
+    const delayMs = Number(req.get('x-test-delay') || 0)
+    await delay(delayMs)
+    if (req.get('x-test-fail') === 'true') {
+      res.status(500).json({ execution: myExecution })
+    } else {
+      res.status(201).json({ execution: myExecution })
+    }
   })
   return built
 }
@@ -338,5 +356,38 @@ describe('idempotency keys', () => {
     expect(logs[0][0]).to.include(testUserLogging)
     expect(logs[1][0]).to.include('log-key-2')
     expect(logs[1][0]).to.include(testUserLogging)
+  })
+
+  it('fences the reclaim: a stale owner that finishes late cannot corrupt or steal the reclaimer\'s completed claim', async () => {
+    const counterRef = { count: 0 }
+    const built = buildExecutionCountingApp(60, counterRef)
+
+    const originalPromise = request
+      .execute(built)
+      .post('/orders')
+      .set('x-test-user', testUserFencing)
+      .set('Idempotency-Key', 'fence-key')
+      .set('x-test-delay', '300')
+      .set('x-test-fail', 'true')
+      .send({ a: 1 })
+    originalPromise.catch(() => {})
+    await delay(100)
+    const reclaimerPromise = request
+      .execute(built)
+      .post('/orders')
+      .set('x-test-user', testUserFencing)
+      .set('Idempotency-Key', 'fence-key')
+      .set('x-test-delay', '20')
+      .send({ a: 1 })
+
+    const [original, reclaimer] = await Promise.all([originalPromise, reclaimerPromise])
+    const third = await request.execute(built).post('/orders').set('x-test-user', testUserFencing).set('Idempotency-Key', 'fence-key').send({ a: 1 })
+
+    expect(original).to.have.status(500)
+    expect(reclaimer).to.have.status(201)
+    expect(reclaimer.body.execution).to.equal(2)
+    expect(third.headers['idempotent-replay']).to.equal('true')
+    expect(third.body.execution).to.equal(2)
+    expect(counterRef.count).to.equal(2)
   })
 })
