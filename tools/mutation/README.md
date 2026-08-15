@@ -93,6 +93,26 @@ makes that repeatable instead of artisanal.
   for mutation testing to be worth running at all — PIT's own docs note that
   mutating uncovered lines is wasted work because "all of which would
   inevitably survive" — but it is a lower bound on nothing about correctness.
+- **Fixture ordering that accidentally matches the expected output makes an
+  ordering test vacuous, and it is invisible in a green run.** The best
+  survivor this audit found lived in `mern-movies/server/src/recommendations/rank.js:40`:
+  replacing the sort comparator's `b.score - a.score` with `null` still
+  passed every existing test, unit and HTTP-integration alike. `Array.prototype.sort`
+  coerces a non-numeric comparator return value to `0`, so under that mutant
+  every pair with a different score reads as tied, and the ranker's entire
+  primary sort key — the thing the feature exists to compute — silently fell
+  through to the id-based tie-breaker on every call. Nothing failed, because
+  every test fixture in the suite happened to construct its candidates with
+  the higher-scored (or higher-priority) movie *first*, so the tie-break's
+  ascending-id order coincidentally reproduced the same sequence a real score
+  sort would have produced. An assertion that checks the right order without
+  ever forcing that order to diverge from some other, incidental order the
+  data happens to already be in — insertion order, id order, alphabetical
+  order — is not really testing the thing it claims to. Coverage tooling
+  cannot see this at all (every line ran); reading the test would not
+  obviously reveal it either, since the assertion looks perfectly normal in
+  isolation. It took mutating the comparator and watching the suite stay
+  green to surface it.
 - **Equivalent mutants, and why detecting them is undecidable.** Some
   mutations produce code that behaves identically to the original for every
   possible input — a `for (i = 0; i < n; i++)` that becomes `i <= n` for a
@@ -260,9 +280,10 @@ results written to .../mern-shop/server/.mutation-results.mern-shop.json
 
 Every mutant here died, which is what a well-covered five-line middleware
 should look like. Point it at a larger file and a bigger `--max` to see a
-survivor — `mern-tickets/server/src/circuitBreaker/breaker.js` has several
-numeric-literal defaults (`windowMs`, `openMs`, `halfOpenMaxCalls`) that
-survive because no test pins their exact value, only the behavior around it:
+survivor — `mern-tickets/server/src/circuitBreaker/breaker.js` still has a
+few numeric-literal defaults (`openMs`, the `Math.max` clamps inside
+`CircuitBreakerOpenError`) that survive because no test pins their exact
+value, only the behavior around it:
 
 ```bash
 node cli.js --app mern-tickets --files src/circuitBreaker/breaker.js --max 40 --seed demo2
@@ -272,6 +293,23 @@ Interrupt a run partway through (`Ctrl-C`) and rerun the identical command —
 the same `--seed` and `--out` will skip every mutant already recorded and
 continue from where it stopped, and `git status` will show a clean tree
 either way.
+
+Running the full catalogue against each app's security- and correctness-critical
+files (a seeded, capped sample each time, not exhaustive — see the audit
+report on the branch this file shipped on) produced 98.9% (mern-shop),
+93.1% (mern-tickets), 80.3% (mern-movies), and 67.5% (sql-ledger). That
+ordering is not noise. It tracks how much adversarial review each app's
+tests have actually had, and the two lowest scores are the two newest apps
+in the repo: `mern-shop`'s security middleware has been iterated on the
+longest and against the most deliberate attack scenarios (auth bypass, rate
+limit evasion, fraud scoring edge cases), while `sql-ledger`'s outbox and
+migration runner are the most recently written and had the fewest rounds of
+someone trying to break their own tests before this tool existed to do it
+automatically. A mutation score on its own — "we're at 67%" — tells a
+reader nothing about whether that is good, bad, or expected; it only
+becomes useful information once it is read next to how much scrutiny that
+code has actually received, which is exactly what coverage percentages
+famously fail to convey and what this number, read carefully, does.
 
 ## Further reading
 
