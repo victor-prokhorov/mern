@@ -181,4 +181,69 @@ describe('circuit breaker', () => {
     expect(res.statusCode).to.equal(503)
     expect(res.headers['Retry-After']).to.equal(String(err.retryAfter))
   })
+
+  it('does not wedge open forever when a half-open trial errors in a way isFailure excludes', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000, isFailure: (err) => err.status !== 400 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+    const badRequest = () => { const err = new Error('bad request'); err.status = 400; throw err }
+    await captureRejection(breaker.call(badRequest))
+    currentTime = 100000
+    const first = await captureRejection(breaker.call(() => 'ok'))
+    currentTime = 200000
+
+    const second = await captureRejection(breaker.call(() => 'ok'))
+
+    expect(first).to.equal(null)
+    expect(second).to.equal(null)
+  })
+
+  it('requires successesToClose successful trials to close from half-open', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000, successesToClose: 2 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+    const first = await captureRejection(breaker.call(() => 'ok'))
+
+    const second = await captureRejection(breaker.call(() => 'ok'))
+
+    expect(first).to.equal(null)
+    expect(second).to.equal(null)
+    expect(breaker.state).to.equal('closed')
+  })
+
+  it('ages failures out of the rolling window so they stop counting toward a trip', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 3, failureRateThreshold: 0.5, windowMs: 1000 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 2000
+
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+
+    expect(breaker.state).to.equal('closed')
+  })
+
+  it('prunes stale outcomes when stats() is read directly, not only inside record()', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, windowMs: 1000 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+
+    const stats = breaker.stats()
+
+    expect(stats.total).to.equal(0)
+  })
+
+  it('resets to closed with an empty window', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+
+    breaker.reset()
+
+    expect(breaker.state).to.equal('closed')
+    expect(breaker.stats()).to.deep.equal({ state: 'closed', total: 0, failures: 0, successes: 0 })
+  })
 })
