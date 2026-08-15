@@ -264,6 +264,17 @@ describe('circuit breaker', () => {
     expect(breaker.state).to.equal('closed')
   })
 
+  it('stays half-open after only one successful trial when successesToClose is 2', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000, successesToClose: 2 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+
+    await breaker.call(() => 'ok')
+
+    expect(breaker.state).to.equal('half-open')
+  })
+
   it('ages failures out of the default 10 second rolling window when windowMs is not given', async () => {
     let currentTime = 0
     const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 3, failureRateThreshold: 0.5 })
