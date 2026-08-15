@@ -6,11 +6,11 @@
     "test": "test"
   },
   "scripts": {
-    "test": "cross-env NODE_ENV=test MONGO_URI=mongodb://127.0.0.1:27017/mern-shop-test EXPOSE_RESET_TOKEN=1 mocha",
+    "test": "cross-env NODE_ENV=test MONGO_URI=mongodb://127.0.0.1:27017/mern-shop-test EXPOSE_RESET_TOKEN=1 JWT_SECRET=test-only-jwt-secret mocha",
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "seed": "node src/seed.js",
-    "test:ci": "cross-env NODE_ENV=test MONGO_URI=mongodb://127.0.0.1:27017/mern-shop-test EXPOSE_RESET_TOKEN=1 mocha --reporter mocha-multi-reporters --reporter-options configFile=.mocharc-reporters.json"
+    "test:ci": "cross-env NODE_ENV=test MONGO_URI=mongodb://127.0.0.1:27017/mern-shop-test EXPOSE_RESET_TOKEN=1 JWT_SECRET=test-only-jwt-secret mocha --reporter mocha-multi-reporters --reporter-options configFile=.mocharc-reporters.json"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +23,7 @@
     "dotenv": "^17.4.2",
     "express": "^4.22.2",
     "express-async-errors": "^3.1.1",
+    "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.5.0",
     "mongoose": "^9.9.2"
   },
