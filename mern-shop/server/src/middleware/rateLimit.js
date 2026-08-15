@@ -15,10 +15,14 @@ export function rateLimit({ limit, windowMs, keyBy, store = rateLimitsRepo }) {
     }
     const remaining = Math.max(limit - doc.count, 0)
     const resetSeconds = Math.max(Math.ceil((windowEnd - now) / 1000), 0)
-    res.set('RateLimit-Limit', String(limit))
-    res.set('RateLimit-Remaining', String(remaining))
-    res.set('RateLimit-Reset', String(resetSeconds))
-    if (doc.count > limit) {
+    const blocked = doc.count > limit
+    const reported = res.get('RateLimit-Remaining')
+    if (blocked || reported === undefined || remaining < Number(reported)) {
+      res.set('RateLimit-Limit', String(limit))
+      res.set('RateLimit-Remaining', String(remaining))
+      res.set('RateLimit-Reset', String(resetSeconds))
+    }
+    if (blocked) {
       res.set('Retry-After', String(resetSeconds))
       res.status(429).json({ error: 'too many requests' })
       return

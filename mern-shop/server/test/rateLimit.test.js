@@ -16,6 +16,14 @@ function buildLimitedApp(options) {
   return limited
 }
 
+function buildStackedApp(first, second) {
+  const limited = express()
+  limited.use(rateLimit({ ...first, keyBy: (req) => `first:${req.get('x-test-key')}` }))
+  limited.use(rateLimit({ ...second, keyBy: (req) => `second:${req.get('x-test-key')}` }))
+  limited.get('/', (req, res) => res.json({ ok: true }))
+  return limited
+}
+
 describe('rate limiting', () => {
   useTestDb()
 
@@ -34,10 +42,10 @@ describe('rate limiting', () => {
 
   it('blocks the 11th reset-password attempt in a window', async () => {
     for (let i = 0; i < 10; i++) {
-      const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant1' })
+      const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant-passphrase' })
       expect(res).to.have.status(400)
     }
-    const blocked = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant1' })
+    const blocked = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'irrelevant-passphrase' })
 
     expect(blocked).to.have.status(429)
     expect(blocked.body).to.deep.equal({ error: 'too many requests' })
@@ -92,6 +100,29 @@ describe('rate limiting', () => {
     const blocked = responses.filter((res) => res.status === 429)
     expect(allowed).to.have.length(5)
     expect(blocked).to.have.length(5)
+  })
+
+  it('reports the binding limiter on login, not the last one to run', async () => {
+    for (let i = 0; i < 3; i++) {
+      await request.execute(app).post('/api/auth/login').send({ email: 'a@shop.test', password: 'wrong' })
+    }
+
+    const res = await request.execute(app).post('/api/auth/login').send({ email: 'b@shop.test', password: 'wrong' })
+
+    expect(res.headers['ratelimit-remaining']).to.equal('1')
+  })
+
+  it('reports the most restrictive stacked policy whichever order the limiters run in', async () => {
+    const looseThenTight = buildStackedApp({ limit: 10, windowMs: 60000 }, { limit: 2, windowMs: 60000 })
+    const tightThenLoose = buildStackedApp({ limit: 2, windowMs: 60000 }, { limit: 10, windowMs: 60000 })
+
+    const first = await request.execute(looseThenTight).get('/').set('x-test-key', 'loose-first')
+    const second = await request.execute(tightThenLoose).get('/').set('x-test-key', 'tight-first')
+
+    expect(first.headers['ratelimit-remaining']).to.equal('1')
+    expect(first.headers['ratelimit-limit']).to.equal('2')
+    expect(second.headers['ratelimit-remaining']).to.equal('1')
+    expect(second.headers['ratelimit-limit']).to.equal('2')
   })
 
   it('fails open when the counter store throws', async () => {

@@ -63,8 +63,8 @@ describe('password reset', () => {
     const user = await seedUsers()
     const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
 
-    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'newpass1' })
-    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: 'newpass1' })
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
+    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: 'correct-horse-battery' })
 
     expect(res).to.have.status(200)
     expect(login).to.have.status(200)
@@ -74,7 +74,7 @@ describe('password reset', () => {
   it('the old password stops working after a reset', async () => {
     await seedUsers()
     const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
-    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'newpass1' })
+    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
 
     const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
 
@@ -84,9 +84,9 @@ describe('password reset', () => {
   it('rejects a used token', async () => {
     await seedUsers()
     const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
-    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'newpass1' })
+    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
 
-    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'anotherpass' })
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'another-valid-passphrase' })
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('reset token is invalid or expired')
@@ -97,7 +97,7 @@ describe('password reset', () => {
     const rawToken = 'a'.repeat(64)
     await PasswordReset.create({ user: user._id, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() - 1000) })
 
-    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'newpass1' })
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'correct-horse-battery' })
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('reset token is invalid or expired')
@@ -106,7 +106,7 @@ describe('password reset', () => {
   it('rejects an unknown token', async () => {
     await seedUsers()
 
-    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'newpass1' })
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: 'unknowntoken', password: 'correct-horse-battery' })
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('reset token is invalid or expired')
@@ -116,9 +116,9 @@ describe('password reset', () => {
     await seedUsers()
     const first = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
     const second = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
-    await request.execute(app).post('/api/auth/reset-password').send({ token: first.body.token, password: 'newpass1' })
+    await request.execute(app).post('/api/auth/reset-password').send({ token: first.body.token, password: 'correct-horse-battery' })
 
-    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: second.body.token, password: 'anotherpass' })
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: second.body.token, password: 'another-valid-passphrase' })
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('reset token is invalid or expired')
@@ -129,8 +129,8 @@ describe('password reset', () => {
     const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
 
     const responses = await Promise.all([
-      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'firstpass1' }),
-      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'secondpass1' })
+      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'first-valid-passphrase' }),
+      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'second-valid-passphrase' })
     ])
 
     const succeeded = responses.filter((res) => res.status === 200)
@@ -147,7 +147,27 @@ describe('password reset', () => {
     const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'short' })
 
     expect(res).to.have.status(400)
-    expect(res.body.error).to.equal('password must be at least 8 characters')
+    expect(res.body.error).to.equal('password must be at least 15 characters')
     expect(await User.findById(user._id)).to.not.be.null
+  })
+
+  it('rejects an eight character password, which is the multi-factor floor and not this app design', async () => {
+    await seedUsers()
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'eightchr' })
+
+    expect(res).to.have.status(400)
+    expect(res.body.error).to.equal('password must be at least 15 characters')
+  })
+
+  it('accepts a password of exactly fifteen characters', async () => {
+    await seedUsers()
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+
+    const res = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'fifteenchars123' })
+
+    expect(res).to.have.status(200)
+    expect(res.body.message).to.equal('password has been reset')
   })
 })
