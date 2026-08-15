@@ -34,6 +34,23 @@ describe('expand-contract migration to a stored balance', () => {
     expect(finalBob).to.equal(450n)
   })
 
+  it('backfills every remaining batch, not just the first, when more than one batch is needed', async () => {
+    await pool.query('ALTER TABLE accounts DROP CONSTRAINT IF EXISTS balance_minor_not_null')
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const carol = await createAccount({ name: 'carol' })
+    await makeTransfer(alice.id, bob.id, 100, 'bf-multi-1')
+    await makeTransfer(bob.id, carol.id, 40, 'bf-multi-2')
+    await pool.query('UPDATE accounts SET balance_minor = NULL WHERE id IN ($1, $2, $3)', [alice.id, bob.id, carol.id])
+
+    await backfillBalances(pool, { batchSize: 1 })
+    await pool.query('ALTER TABLE accounts ADD CONSTRAINT balance_minor_not_null CHECK (balance_minor IS NOT NULL) NOT VALID')
+    await pool.query('ALTER TABLE accounts VALIDATE CONSTRAINT balance_minor_not_null')
+
+    const remaining = await pool.query('SELECT id FROM accounts WHERE id IN ($1, $2, $3) AND balance_minor IS NULL', [alice.id, bob.id, carol.id])
+    expect(remaining.rows).to.have.length(0)
+  })
+
   it('dual-write keeps the stored and derived balances equal under concurrent transfers', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })

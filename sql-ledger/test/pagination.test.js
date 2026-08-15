@@ -100,6 +100,30 @@ describe('pagination', () => {
     expect(res).to.have.status(400)
   })
 
+  it('rejects a well-formed but incomplete decoded cursor payload', async () => {
+    const cursor = Buffer.from(JSON.stringify({})).toString('base64url')
+
+    const res = await keysetPage({ cursor })
+
+    expect(res).to.have.status(400)
+  })
+
+  it('rejects a decoded cursor whose id is not a digit string', async () => {
+    const cursor = Buffer.from(JSON.stringify({ c: '2024-01-01T00:00:00.000Z', i: 'not-a-number' })).toString('base64url')
+
+    const res = await keysetPage({ cursor })
+
+    expect(res).to.have.status(400)
+  })
+
+  it('rejects a decoded cursor whose created-at is not a string', async () => {
+    const cursor = Buffer.from(JSON.stringify({ c: 1704067200000, i: '5' })).toString('base64url')
+
+    const res = await keysetPage({ cursor })
+
+    expect(res).to.have.status(400)
+  })
+
   it('clamps limit to the configured maximum', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
