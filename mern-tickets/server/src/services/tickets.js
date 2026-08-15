@@ -4,6 +4,7 @@ import * as ticketEvents from '../repositories/ticketEvents.js'
 import * as comments from '../repositories/comments.js'
 import * as users from '../repositories/users.js'
 import { BadRequestError, NotFoundError } from '../middleware/error.js'
+import { authorize } from '../policy/engine.js'
 
 export const TRANSITIONS = {
   open: ['triaged'],
@@ -28,6 +29,7 @@ async function requireTicket(id) {
 }
 
 export async function create({ subject, title, body, priority }) {
+  authorize({ subject, action: 'ticket:create', resource: null, context: {} })
   if (!title || !body) throw new BadRequestError('title and body are required')
   if (!SLA_HOURS[priority]) throw new BadRequestError('invalid priority')
   const reporter = await users.findById(subject.id)
@@ -45,16 +47,19 @@ export async function create({ subject, title, body, priority }) {
   return ticket
 }
 
-export function list({ status, assignee, priority }) {
+export function list({ subject, status, assignee, priority }) {
   const filter = {}
   if (status) filter.status = status
   if (assignee) filter.assignee = assignee
   if (priority) filter.priority = priority
+  if (subject.role === 'reporter') filter.reporter = subject.id
+  else if (subject.role === 'agent') filter.teamId = subject.teamId
   return tickets.find(filter)
 }
 
-export async function get(id) {
+export async function get({ subject, id }) {
   const ticket = await requireTicket(id)
+  authorize({ subject, action: 'ticket:read', resource: ticket, context: {} })
   const [ticketComments, events] = await Promise.all([
     comments.findByTicket(ticket._id),
     ticketEvents.findByTicket(ticket._id)
@@ -64,6 +69,7 @@ export async function get(id) {
 
 export async function transitionStatus({ subject, id, status }) {
   const ticket = await requireTicket(id)
+  authorize({ subject, action: 'ticket:transition', resource: ticket, context: {} })
   const allowed = TRANSITIONS[ticket.status] || []
   if (!allowed.includes(status)) throw new BadRequestError('invalid status transition')
   const from = ticket.status
@@ -75,6 +81,7 @@ export async function transitionStatus({ subject, id, status }) {
 
 export async function assign({ subject, id, assigneeId }) {
   const ticket = await requireTicket(id)
+  authorize({ subject, action: 'ticket:assign', resource: ticket, context: {} })
   if (!ObjectId.isValid(assigneeId)) throw new BadRequestError('invalid assignee id')
   const assigneeUser = await users.findById(assigneeId)
   if (!assigneeUser) throw new BadRequestError('assignee not found')
@@ -87,6 +94,7 @@ export async function assign({ subject, id, assigneeId }) {
 
 export async function addComment({ subject, id, body }) {
   const ticket = await requireTicket(id)
+  authorize({ subject, action: 'ticket:comment', resource: ticket, context: {} })
   if (!body) throw new BadRequestError('body is required')
   const comment = await comments.create({ ticket: ticket._id, author: subject.id, body })
   await ticketEvents.create({ ticket: ticket._id, actor: subject.id, type: 'commented', from: null, to: null })

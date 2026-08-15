@@ -6,11 +6,11 @@ export async function create(req, res) {
 }
 
 export async function list(req, res) {
-  res.json(await tickets.list({ status: req.query.status, assignee: req.query.assignee, priority: req.query.priority }))
+  res.json(await tickets.list({ subject: req.subject, status: req.query.status, assignee: req.query.assignee, priority: req.query.priority }))
 }
 
 export async function get(req, res) {
-  res.json(await tickets.get(req.params.id))
+  res.json(await tickets.get({ subject: req.subject, id: req.params.id }))
 }
 
 export async function updateStatus(req, res) {
