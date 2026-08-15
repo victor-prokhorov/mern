@@ -34,6 +34,7 @@ async function createAccount(overrides = {}) {
 
 async function makeTransfer(fromAccountId, toAccountId, reference) {
   const res = await request.execute(app).post('/api/transfers').send({ reference, fromAccountId, toAccountId, amountMinor: 100 })
+  if (res.status !== 201) throw new Error(`makeTransfer(${reference}) got ${res.status}: ${JSON.stringify(res.body)}`)
   return res.body
 }
 
