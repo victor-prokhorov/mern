@@ -6,8 +6,7 @@ export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 function resolveJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET
-  if (process.env.NODE_ENV === 'test') return 'test-only-insecure-fallback-secret'
-  throw new Error('JWT_SECRET environment variable must be set outside the test environment')
+  throw new Error('JWT_SECRET environment variable must be set')
 }
 
 const JWT_SECRET = resolveJwtSecret()
