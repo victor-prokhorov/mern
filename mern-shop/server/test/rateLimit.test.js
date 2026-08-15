@@ -51,6 +51,28 @@ describe('rate limiting', () => {
     expect(blocked.body).to.deep.equal({ error: 'too many requests' })
   })
 
+  it('blocks the 21st refresh attempt in a window', async () => {
+    for (let i = 0; i < 20; i++) {
+      const res = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: 'unknown-refresh-token' })
+      expect(res).to.have.status(401)
+    }
+    const blocked = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: 'unknown-refresh-token' })
+
+    expect(blocked).to.have.status(429)
+    expect(blocked.body).to.deep.equal({ error: 'too many requests' })
+  })
+
+  it('blocks the 21st logout attempt in a window', async () => {
+    for (let i = 0; i < 20; i++) {
+      const res = await request.execute(app).post('/api/auth/logout').send({ refreshToken: 'unknown-refresh-token' })
+      expect(res).to.have.status(200)
+    }
+    const blocked = await request.execute(app).post('/api/auth/logout').send({ refreshToken: 'unknown-refresh-token' })
+
+    expect(blocked).to.have.status(429)
+    expect(blocked.body).to.deep.equal({ error: 'too many requests' })
+  })
+
   it('carries RateLimit headers on both allowed and blocked responses', async () => {
     const limited = buildLimitedApp({ limit: 2, windowMs: 60000 })
 

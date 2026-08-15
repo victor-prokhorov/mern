@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
@@ -6,7 +7,7 @@ import Product from '../src/models/product.js'
 import User from '../src/models/user.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { normalizeEmail, blockUser, unblockUser } from '../src/services/blocks.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, loginAs } from './helpers.js'
 
 use(chaiHttp)
 
@@ -53,37 +54,43 @@ describe('user blocklist', () => {
   it('rejects an order from a blocked user account', async () => {
     const user = await seedUsers()
     await setUpCart(user._id)
+    const session = await loginAs(app, seedUser.email, seedUser.password)
     await blockUser(user._id, 'fraud')
 
-    const res = await request.execute(app).post('/api/orders').send({ cartId: 'cart-1', userId: user._id.toString(), customer })
+    const res = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${session.accessToken}`).send({ cartId: 'cart-1', customer })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('account is not available')
   })
 
   it('refuses an order when the account email domain itself is on the pattern blocklist', async () => {
-    const user = await User.create({ name: 'Frank', email: 'frank@special-domain.test', passwordHash: 'irrelevant' })
+    const passwordHash = await bcrypt.hash('frank-secret-passphrase', 10)
+    await User.create({ name: 'Frank', email: 'frank@special-domain.test', passwordHash })
     await setUpCart()
+    const session = await loginAs(app, 'frank@special-domain.test', 'frank-secret-passphrase')
     await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'domain', value: 'special-domain.test', reason: 'known fraud domain' })
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Frank', email: 'someone-else@shop.test', address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Frank', email: 'someone-else@shop.test', address: '1 Main Street' } })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('account is not available')
   })
 
   it('refuses an order when the account email itself is on the pattern blocklist, even with a different checkout email', async () => {
-    const user = await seedUsers()
+    await seedUsers()
     await setUpCart()
+    const session = await loginAs(app, seedUser.email, seedUser.password)
     await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'email', value: seedUser.email, reason: 'known fraud' })
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'someone-else@shop.test', address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Eve', email: 'someone-else@shop.test', address: '1 Main Street' } })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('account is not available')
@@ -92,9 +99,10 @@ describe('user blocklist', () => {
   it('leaves the cart intact when an order is refused for a blocked account', async () => {
     const user = await seedUsers()
     await setUpCart(user._id)
+    const session = await loginAs(app, seedUser.email, seedUser.password)
     await blockUser(user._id, 'fraud')
 
-    await request.execute(app).post('/api/orders').send({ cartId: 'cart-1', userId: user._id.toString(), customer })
+    await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${session.accessToken}`).send({ cartId: 'cart-1', customer })
 
     const cart = await Cart.findOne({ cartId: 'cart-1' })
     expect(cart.items).to.have.length(1)

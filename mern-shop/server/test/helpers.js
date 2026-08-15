@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { request } from 'chai-http'
 import { connect } from '../src/db.js'
 
 export function useTestDb() {
@@ -12,4 +13,9 @@ export function useTestDb() {
   after(async () => {
     await mongoose.disconnect()
   })
+}
+
+export async function loginAs(app, email, password) {
+  const res = await request.execute(app).post('/api/auth/login').send({ email, password })
+  return res.body
 }
