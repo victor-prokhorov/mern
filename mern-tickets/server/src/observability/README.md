@@ -1,0 +1,121 @@
+# Observability
+
+## What this is
+
+The infrastructure that answers "what did this request do, and is the service healthy" without touching a single line of ticket domain logic: a request id minted or accepted per request, an `AsyncLocalStorage` context that carries that id (plus the caller and the matched route) to any code anywhere in the call tree, a structured JSON logger built on top of it, hand-rolled RED metrics at `GET /metrics`, `/healthz`/`/readyz` health endpoints that are deliberately not the same question, and a graceful-shutdown sequence wired to `SIGTERM`. Nothing here is domain-specific — it is the reason a log line from the hook pipeline or the circuit breaker can be tied back to the request that caused it.
+
+## How it works here
+
+`requestContext` (`src/observability/middleware.js:5-10`) is mounted first, before `cors()` and `express.json()` (`src/app.js:16-19`). It resolves a request id via `resolveRequestId` (`src/observability/requestId.js:11-13`), which sanitizes an inbound `X-Request-Id` against `^[A-Za-z0-9-]{1,64}$` (`src/observability/requestId.js:3,5-9`) and falls back to `crypto.randomUUID()` only when the inbound value is missing or fails that check — an attacker-controlled header never reaches a log line unfiltered. The id is echoed on the response (`res.set('X-Request-Id', requestId)`), and the route template is computed synchronously, right there, before anything else runs (`src/observability/routeTemplate.js:14-17` — more on why "synchronously" matters below). All three — `requestId`, `userId: null`, `route` — become the store for `runWithContext` (`src/observability/context.js:5-7`), which wraps the rest of the middleware chain: `runWithContext({ requestId, userId: null, route }, next)`. Because this wraps `next()` itself, every middleware and handler downstream — `identify`, the controller, the service, the hook pipeline, the webhook notifier — executes inside that `AsyncLocalStorage` scope, and Node propagates the store across every `await` and callback scheduled from within it, with no argument threaded through any of those function signatures. `identify` (`src/middleware/identify.js:4,12`) fills in the one field that isn't known yet at request-context time — `setContextField('userId', req.subject.id)` (`src/observability/context.js:13-16`) mutates the *same* store object in place once the caller's identity is resolved, rather than creating a new one, so every log line before and after that point shares one context.
+
+The structured logger (`src/observability/logger.js`) is three functions wrapping one mutable module-level `currentWriter` (`:7`, defaulting to `process.stdout.write`, `:3-5`). `logger.info/warn/error` (`:31-35`) all funnel into `emit` (`:17-29`), which builds one flat object — `level`, `msg`, a fixed `time`, then `requestId`/`userId`/`route` read straight from `getContext()` (`src/observability/context.js:9-11`), then whatever extra fields the call site passed — and writes it as one `JSON.stringify`'d line. `setWriter`/`resetWriter` (`:9-15`) exist for exactly one reason: tests need to intercept output without scraping `process.stdout`, so `test/observability.test.js` swaps the writer for a function that pushes parsed JSON into an array, asserts on it, then calls `resetWriter()`. `src/hooks/registry.js:1,43` and `src/notifier/webhook.js:2,21,53` import this same `logger` and call it in place of the `console.error`/`console.log` calls that used to be there — a skipped hook handler and a webhook breaker transition or notify failure are now JSON objects carrying whatever request caused them, not free text.
+
+RED metrics are two files. `src/observability/metrics.js` holds the actual data: a `Map` of counters keyed by `(method, route, status_class)` (`recordRequest`, `:14-26`) and a `Map` of histograms keyed by `(method, route)`, using the classic Prometheus bucket boundaries (`:1`) — each observation increments every bucket boundary it falls at-or-under (`:20-22`), which is what makes each bucket's stored count already cumulative, so `renderMetrics` (`:37-57`) prints each bucket count directly rather than re-summing. `src/observability/metricsMiddleware.js` is the Express glue, and it has a specific, load-bearing ordering decision inside it: the route template is computed *before* `next()` is called (`:9`), not lazily inside the `res.on('finish', ...)` callback. That is not stylistic — an earlier version of this middleware computed the route lazily on `finish` and silently mislabeled successful requests as `route="unmatched"`, because of an Express internal: when a request is dispatched into a mounted sub-router (`app.use('/api/tickets', tickets)`), Express strips that mount prefix from `req.url` for the duration of the sub-router's stack and only restores it when `next()` is invoked again to signal that layer's stack is done — but a terminal handler that responds directly (`res.json(...)`, no further `next()`) never triggers that restoration, so `req.path` read later, in a `finish` handler, is left permanently mount-relative. Reading the template up front, while `req.path` still reflects the full path nothing has stripped yet, sidesteps that entirely; `test/observability.test.js`'s two metrics tests are what caught the original bug.
+
+Health is two independent checks and one piece of shared mutable state. `GET /healthz` (`src/observability/routes.js:8-10`) does nothing but answer `200` — no database call, on purpose. `GET /readyz` (`:12-15`) answers `200` only if `isReady()` (`src/observability/health.js:7-9`, a module-level boolean defaulting to `true`) is true *and* `mongoose.connection.readyState === 1`; either being false is `503`. `setReady(false)` (`src/observability/health.js:3-5`) is the hook graceful shutdown uses to fail readiness before it touches the server at all.
+
+Graceful shutdown (`src/observability/shutdown.js:1-17`) is a factory, `createGracefulShutdown({ server, closeStore, setNotReady, drainTimeoutMs, exit })`, returning one idempotent `shutdown` function — the `shuttingDown` flag (`:2,4-5`) means a second `SIGTERM` during drain is a no-op rather than a second attempt to close an already-closing server. Calling it runs, in order: `setNotReady()` (`:6`) first, then `server.close()` (`:9`) — `server.close()` stops the server from *accepting new connections* immediately but lets whatever is already in flight finish, and the surrounding `Promise` (`:7-13`) resolves either when that finishes or when `drainTimeoutMs` (default 5000ms) elapses, whichever comes first — then `closeStore()` (`:14`), then `exit()` (`:15`, defaulting to `process.exit(0)`). `exit` and `closeStore` are both injected specifically so `test/observability.test.js`'s shutdown test can drive a real `node:http` server on an ephemeral port and assert the actual sequence without a test run calling `process.exit` on itself. `src/index.js:14-18,20` is where production wiring happens: `process.on('SIGTERM', shutdown)`, with `closeStore: () => mongoose.disconnect()` and `setNotReady: () => setReady(false)`.
+
+## The core concepts
+
+- **The three pillars, and why the metaphor oversells it.** Metrics, logs, and traces are usually presented as three independent pillars, but as Peter Bourgon puts it, they overlap far more than that framing admits: metrics are cheap, aggregated numeric summaries with no per-event detail; logs are the opposite, arbitrarily detailed discrete events at real storage cost; tracing is request-scoped data explicitly bound to one transaction's lifecycle across however many services it touches. This app has all three in miniature: metrics that never carry a request id (by design — see cardinality below), logs that always do (via the context), and no actual distributed tracing, because there is only one service.
+- **RED versus USE, and why they don't compete.** The RED method — Rate, Errors, Duration, one metric triad per request-driven service, in Tom Wilkie's framing "you model this for every single service in your architecture, and this gives you a nice, consistent view of how your architecture is behaving" — is what `/metrics` implements here: request rate, error count (via status class), and a duration histogram, per route template. Brendan Gregg's USE method — Utilization, Saturation, Errors — asks a different question about a different kind of thing: not "how is this service being *used*" but "is this *resource* (CPU, a connection pool, a queue) the bottleneck." This app has no USE metrics at all — no process-level resource instrumentation — because it has no resource contention worth watching yet; RED is the right first instrument for a request-driven service, USE is what you add once a specific resource becomes suspect.
+- **Cardinality is the thing that kills a metrics backend, not size.** Prometheus's own guidance is blunt about this: "Do not use labels to store dimensions with high cardinality (many different label values), such as user IDs, email addresses, or other unbounded sets of values," because every unique combination of label values is a distinct time series the backend has to store and index. A route *template* (`/api/tickets/:id`) is one label value no matter how many tickets exist; a route *path* (`/api/tickets/64f...`) is one label value *per ticket*, growing without bound for as long as the app runs — this is concretely how teams take down their own metrics backend or blow their ingestion budget, not a theoretical risk. `routeTemplateFor` (`src/observability/routeTemplate.js:14-17`) exists for exactly this: it matches by *position* in a small, fixed list of known routes (`:2-11`), never by *content*, so a valid Mongo id, a garbage string, or a SQL-injection attempt in the id slot all collapse to the same `:id` label — nothing about the concrete value of that path segment can ever reach a label, because the matcher never looks at it beyond confirming a segment exists there.
+- **Structured logging, and why message interpolation destroys queryability.** `logger.info(\`ticket ${id} created\`)` bakes a value into a string a log-search tool can only grep, never filter or aggregate on. `logger.info('ticket created', { ticketId: id })` (the actual shape every call site in this app uses) keeps the message a stable, small-cardinality label — always the same string for the same kind of event — and puts the variable data in its own field, queryable as `ticketId = "..."` rather than a substring search. This is also why a metrics label and a log field look similar but are not interchangeable: a log field can carry a ticket id because a log *line* is scoped to one event, not aggregated into a single time series the way a metric label is.
+- **Log levels and sampling.** This app has three levels (`info`, `warn`, `error`, `src/observability/logger.js:31-35`) and no sampling at all — every call to `logger.*` writes a line. That is fine at this app's volume; a service handling enough traffic that per-request logging becomes its own cost problem typically samples verbose levels (log 1 in N `info` lines, or only lines belonging to a sampled fraction of trace ids) while always keeping `error`, because a dropped error is a debugging session that never gets to happen.
+- **Correlation across async boundaries, and why `AsyncLocalStorage` specifically.** The alternative to a context object propagated by the runtime is threading a `requestId` parameter through every function signature that might ever want to log — which fails the moment one of those functions calls a shared dependency (the hook registry, the circuit breaker) that was written with no idea which request invoked it. Node's `AsyncLocalStorage` solves this by making the store implicitly available to "any asynchronous operations created within the callback," automatically propagated "through promises, callbacks, timers, and other async operations" without being passed as an argument anywhere — which is exactly what lets `src/hooks/registry.js` and `src/notifier/webhook.js` log with full request correlation despite importing nothing about HTTP at all.
+- **Liveness, readiness, and the conflation that restarts a healthy process.** Kubernetes draws this distinction sharply: a liveness probe answers "is this container in a broken state that needs restarting," and failing it gets the container killed and restarted; a readiness probe answers "should traffic be routed here right now," and failing it only pulls the pod out of service endpoints, "traffic is redirected away, but the container keeps running." Using the same check for both is the textbook failure mode: a transient database hiccup fails a combined check, the container gets killed and restarted — solving nothing, since the process wasn't broken, the database was slow — when the correct response was simply to stop sending it traffic until Mongo recovered. `/healthz` here never touches Mongo for exactly this reason; only `/readyz` does.
+- **Graceful shutdown and connection draining, in the order that actually matters.** Kubernetes' own termination sequence is SIGTERM first, a grace period during which the app is expected to "stop accepting new work... finish in-flight requests... clean up resources... exit cleanly," and SIGKILL only if it doesn't finish in time. The subtlety this app's `shutdown` gets right is the *order* inside that window: `setNotReady()` runs before `server.close()` (`src/observability/shutdown.js:6,9`), so a load balancer polling `/readyz` has a chance to see "not ready" and stop routing new traffic *before* the server itself starts refusing connections — flip them the other way and there's a window where the load balancer still thinks this instance is fine and sends it a request the server is already rejecting.
+- **What tracing adds over correlated logs, and when it's worth the cost.** A `requestId` threaded through one process's logs answers "what did this request do," which is all a single-service app like this one ever needs. Distributed tracing exists for a different scale of problem: as Google's Dapper paper frames it, once a system is "constructed from collections of software modules that may be developed by different teams, perhaps in different programming languages, and could span many thousands of machines across multiple physical facilities," a request id alone can tell you it touched service B, but not the causal shape of *how* — which calls were parallel, which were sequential, where the latency actually accumulated across a dozen hops. That's what trace and span ids, and the parent/child relationships between spans, add — and it earns its cost exactly when there is more than one service in the request path to reconstruct a path across. There is one service here, so this app stops at correlated logs.
+- **PII in logs.** Nothing this app logs today includes a password, a token, or payment data, and that has to stay a design constraint, not an accident: OWASP's guidance is that logs themselves become an attack target, listing passwords, access tokens, and encryption keys among data that "should usually not be recorded directly in the logs" because of exactly that exposure. The one field every log line here carries that's worth naming is `userId` — a database id, not an email or a name — which is a deliberate line: it's needed for correlation ("which caller hit this"), and a bare Mongo ObjectId is not itself sensitive the way an email address or a real name would be.
+
+## Standard practice
+
+- Mount the request-id/context middleware first, before anything else that might log — a middleware that logs before this one runs logs with no correlation at all.
+- Sanitize an inbound correlation id before trusting it — an attacker who controls this header controls what lands in every log line and metric label downstream if it's used unchecked.
+- Never let a metrics label carry an unbounded value — see "cardinality" above; template routes by position, not by the content of a path segment.
+- Keep the log message a stable string and put variable data in fields — see "structured logging" above for why interpolation defeats search and aggregation.
+- Make the logger's writer swappable — a test that can't intercept output can't assert that correlation actually propagated, only that logging didn't crash.
+- Give liveness and readiness different questions and different checks — never let a dependency blip restart a process that was never actually broken.
+- Flip readiness to failing before the server stops accepting connections, not after or at the same time — see "graceful shutdown" above for the exact failure this ordering avoids.
+- Bound the drain window — an in-flight request should get to finish, but a shutdown that waits forever for one that never will is not graceful, it's stuck.
+
+## What this toy skips
+
+- Distributed tracing entirely — no trace ids, no spans, nothing beyond one process's correlated logs. See "what tracing adds" above for exactly where that starts to matter and this doesn't.
+- Sampling of any kind — every log call writes a line and every request updates the metrics store; a much higher-traffic service would need to sample at least verbose levels.
+- Alerting rules or a real metrics backend — `/metrics` is a text endpoint in the Prometheus exposition format; nothing here scrapes it, stores it, or evaluates a threshold against it.
+- A startup probe distinct from liveness/readiness — this app has no slow-init phase worth gating separately, but a real one that does (warming a cache, running migrations) would want a third check.
+- Any log field encryption, redaction, or hashing pass on what call sites pass in — see "PII in logs" above; the guarantee here is "nothing sensitive is passed to `logger.*` today," not "the logger would catch it if something were."
+- Multi-process/multi-instance readiness or shutdown coordination — `isReady()` (`src/observability/health.js`) is process-local state, same as the circuit breaker (`../circuitBreaker/README.md`) it sits next to; a fleet behind a load balancer needs nothing shared here, each instance drains itself independently.
+- Persisting metrics or logs anywhere — `src/observability/metrics.js`'s counters and histograms live in memory and reset to zero on every process restart; nothing here writes them to disk or ships them off-box.
+
+## Try it
+
+Correlate one request's id from the header through to an async log line — this uses the same webhook fire-and-forget path `../circuitBreaker/README.md` walks through, so a `TICKET_WEBHOOK_URL` pointed at a failing upstream (any closed port, or the two-route `node:http` fake from that README) will do:
+
+```bash
+curl -s -X POST http://localhost:5001/api/tickets \
+  -H 'Content-Type: application/json' -H 'x-user-id: <rae id>' -H 'X-Request-Id: demo-request-1' \
+  -d '{"title":"t","body":"observability demo","priority":"normal"}' -D - -o /dev/null | grep -i x-request-id
+```
+
+```
+x-request-id: demo-request-1
+```
+
+The server's log line for the webhook failure that follows (fire-and-forget, so it lands a moment after the response) carries the same id, live, copied verbatim from a real run:
+
+```json
+{"level":"error","msg":"webhook notify failed","time":"2026-08-15T18:51:29.953Z","requestId":"demo-request-1","userId":"6a80b456c5aae7e8deb25292","route":"/api/tickets","error":"fetch failed"}
+```
+
+Send a malformed id and watch it get replaced rather than trusted:
+
+```bash
+curl -s -D - -o /dev/null http://localhost:5001/healthz -H 'X-Request-Id: not a valid id!!' | grep -i x-request-id
+```
+
+```
+X-Request-Id: 2578cbd2-729b-48d7-8466-cbc52caf35d7
+```
+
+Check readiness versus liveness independently:
+
+```bash
+curl -s http://localhost:5001/healthz
+curl -s http://localhost:5001/readyz
+```
+
+```
+{"status":"ok"}
+{"status":"ok"}
+```
+
+And the metrics endpoint, after a couple of requests against two different tickets, labeled by template rather than by either ticket's concrete id:
+
+```bash
+curl -s http://localhost:5001/metrics | grep api/tickets
+```
+
+```
+http_requests_total{method="POST",route="/api/tickets",status_class="2xx"} 2
+http_requests_total{method="GET",route="/api/tickets/:id",status_class="2xx"} 1
+http_request_duration_seconds_count{method="POST",route="/api/tickets"} 2
+http_request_duration_seconds_count{method="GET",route="/api/tickets/:id"} 1
+```
+
+## Further reading
+
+- [Peter Bourgon, Metrics, tracing, and logging](https://peter.bourgon.org/blog/2017/02/21/metrics-tracing-and-logging.html) — the three-pillars framing this README leans on, and why the pillars overlap more than the metaphor suggests.
+- [Grafana Labs, The RED Method: how to instrument your services](https://grafana.com/blog/2018/08/02/the-red-method-how-to-instrument-your-services/) — Tom Wilkie's original RED framing, reproduced after the original Weaveworks post went offline; Rate/Errors/Duration as one consistent triad per service.
+- [Brendan Gregg, The USE Method](https://www.brendangregg.com/usemethod.html) — Utilization/Saturation/Errors for resources, the method this app deliberately does not implement, and why it answers a different question than RED.
+- [Prometheus, Metric and label naming](https://prometheus.io/docs/practices/naming/) — the explicit warning against unbounded label values that this README's cardinality argument is built on.
+- [The Twelve-Factor App, XI. Logs](https://12factor.net/logs) — treat logs as an event stream to stdout, never as a file the app manages itself; this app's `defaultWriter` (`src/observability/logger.js:3-5`) does exactly this and nothing more.
+- [Node.js docs, `AsyncLocalStorage`](https://nodejs.org/api/async_context.html) — the API this app's context module is a thin wrapper over, including the automatic propagation across promises, callbacks, and timers this README relies on.
+- [Kubernetes docs, Configure Liveness, Readiness and Startup Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) — the liveness-vs-readiness distinction and the restart-loop failure mode of conflating them.
+- [Kubernetes docs, Pod lifecycle: termination of Pods](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/) — the SIGTERM-then-grace-period-then-SIGKILL sequence this app's shutdown module is built to cooperate with.
+- [OWASP, Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) — what never belongs in a log line and why logs themselves are an attack surface.
+- [Google Research, Dapper, a Large-Scale Distributed Systems Tracing Infrastructure](https://research.google/pubs/dapper-a-large-scale-distributed-systems-tracing-infrastructure/) — what tracing adds once a request crosses more services than one correlated id can reconstruct the shape of.
+
+Elsewhere in this repo: [`../circuitBreaker/README.md`](../circuitBreaker/README.md) for the breaker whose state transitions now log through this module instead of `console.log`/`console.error`; [`../hooks/README.md`](../hooks/README.md) for the pipeline whose skipped-handler failures do the same; [`../concurrency/README.md`](../concurrency/README.md) for how a 412 or 428 from that feature shows up in this app's request-scoped log, the other half of this branch's work.
