@@ -5,6 +5,7 @@ import movies from './routes/movies.js'
 import actors from './routes/actors.js'
 import ratings from './routes/ratings.js'
 import watches from './routes/watches.js'
+import recommendations from './routes/recommendations.js'
 import { currentUser } from './middleware/currentUser.js'
 import { errorHandler } from './middleware/error.js'
 
@@ -17,6 +18,7 @@ app.use('/api/movies', movies)
 app.use('/api/actors', actors)
 app.use('/api/ratings', ratings)
 app.use('/api/watches', watches)
+app.use('/api/recommendations', recommendations)
 app.use(errorHandler)
 
 export default app

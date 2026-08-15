@@ -33,7 +33,7 @@ describe('rank', () => {
     const result = rank(candidates, signals)
 
     expect(result).to.have.length(1)
-    expect(result[0].score).to.equal(5.6)
+    expect(result[0].score).to.be.closeTo(5.6, 1e-9)
     expect(result[0].reasons).to.deep.equal(['DISLIKED_GENRE:comedy'])
   })
 
@@ -44,7 +44,7 @@ describe('rank', () => {
     const result = rank(candidates, signals)
 
     expect(result[0].movie._id).to.equal('a')
-    expect(result[0].score).to.equal(7.7)
+    expect(result[0].score).to.be.closeTo(7.7, 1e-9)
     expect(result[0].reasons).to.deep.equal(['WATCHED_GENRE:drama'])
   })
 
