@@ -6,13 +6,13 @@ A support-ticket domain: tickets move through a fixed lifecycle, every mutation 
 
 ## How it works here
 
-`POST /api/tickets` (`src/routes/tickets.js:6`) calls `tickets.create` (`src/services/tickets.js:30`), which looks up the reporter, stamps `status: 'open'`, computes `dueAt` from priority via `dueAtFor` (`src/services/tickets.js:18`), and writes a `created` `TicketEvent` (`src/services/tickets.js:44`).
+`POST /api/tickets` (`src/routes/tickets.js:8`) calls `tickets.create` (`src/services/tickets.js:33`), which looks up the reporter, stamps `status: 'open'`, computes `dueAt` from priority via `dueAtFor` (`src/services/tickets.js:21`), and writes a `created` `TicketEvent` (`src/services/tickets.js:52`).
 
-`PATCH /api/tickets/:id/status` (`src/routes/tickets.js:9`) calls `transitionStatus` (`src/services/tickets.js:65`), which looks up the ticket's current status, consults the `TRANSITIONS` map (`src/services/tickets.js:8`) for the allowed next states, rejects with 400 `invalid status transition` if `status` is not in that list, otherwise saves the new status and writes a `status_changed` event with `from`/`to`.
+`PATCH /api/tickets/:id/status` (`src/routes/tickets.js:11`) calls `transitionStatus` (`src/services/tickets.js:76`), which looks up the ticket's current status, consults the `TRANSITIONS` map (`src/services/tickets.js:11`) for the allowed next states, rejects with 400 `invalid status transition` if `status` is not in that list, otherwise saves the new status and writes a `status_changed` event with `from`/`to`.
 
 `PATCH /api/tickets/:id/assignee` and `POST /api/tickets/:id/comments` follow the same shape: load the ticket, perform the mutation, append a `TicketEvent` (`assignee_changed`, `commented`).
 
-`GET /api/tickets/:id` (`src/services/tickets.js:56`) returns the ticket alongside its full comment list and its full event list in one response, so a client can render a timeline without three round trips.
+`GET /api/tickets/:id` (`src/routes/tickets.js:10`, `src/services/tickets.js:66`) returns the ticket alongside its full comment list and its full event list in one response, so a client can render a timeline without three round trips. Every response that carries a ticket or comment goes through `viewModeratable` (`src/controllers/tickets.js:7`) first — see `src/moderation/README.md` for why.
 
 Every route under `/api/tickets` runs through `identify` (`src/middleware/identify.js`), which reads the `x-user-id` header, loads that user, and attaches `{ id, role, teamId }` to `req.subject`. **This is not authentication.** There is no password check, no token, no session — anyone can put any user's id in that header and become them. It exists only so the rest of the request has a caller to reason about. Real login (`POST /api/auth/login`, `src/services/auth.js`) checks a bcrypt hash the same way `mern-shop/server/src/services/auth.js` does, but its result (a user object) is not turned into a credential the ticket routes verify. Task 2 adds authorization on top of this identity; nothing here adds authentication on top of it — that would require sessions or tokens, out of scope for this app.
 
