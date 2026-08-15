@@ -41,6 +41,12 @@ describe('normalization pipeline', () => {
     expect(result).to.equal('ass')
   })
 
+  it('maps the canonical leetspeak digits and punctuation to latin letters', () => {
+    const result = mapHomoglyphs('h3ll0 4ss cla55 k!ll')
+
+    expect(result).to.equal('hello ass class kill')
+  })
+
   it('collapses repeated letters', () => {
     const result = collapseRepeats('heeeello')
 
@@ -78,6 +84,15 @@ describe('keyword matching', () => {
 
     expect(matches).to.have.length(1)
     expect(matches[0].term).to.equal('password')
+  })
+
+  it('catches the canonical h3ll0 leetspeak evasion', () => {
+    const terms = [{ term: 'hello', matchType: 'word', severity: 'flag' }]
+
+    const matches = scan('h3ll0 there', terms)
+
+    expect(matches).to.have.length(1)
+    expect(matches[0].term).to.equal('hello')
   })
 
   it('catches elongation evasion', () => {
