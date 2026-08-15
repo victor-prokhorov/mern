@@ -22,7 +22,17 @@ function logTransition(event) {
 
 export function createNotifier(overrides = {}) {
   const timeoutMs = overrides.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const breaker = createCircuitBreaker({ ...overrides, isFailure: isWebhookFailure, onStateChange: logTransition })
+  const breaker = createCircuitBreaker({
+    now: overrides.now,
+    windowMs: overrides.windowMs,
+    openMs: overrides.openMs,
+    minimumThroughput: overrides.minimumThroughput,
+    failureRateThreshold: overrides.failureRateThreshold,
+    halfOpenMaxCalls: overrides.halfOpenMaxCalls,
+    successesToClose: overrides.successesToClose,
+    isFailure: isWebhookFailure,
+    onStateChange: logTransition
+  })
   async function post(url, event) {
     const res = await fetch(url, {
       method: 'POST',
@@ -45,6 +55,7 @@ export function createNotifier(overrides = {}) {
   return {
     notify,
     stats: breaker.stats,
+    reset: breaker.reset,
     get state() {
       return breaker.state
     }
@@ -55,3 +66,4 @@ const defaultNotifier = createNotifier()
 
 export const notify = defaultNotifier.notify
 export const stats = defaultNotifier.stats
+export const reset = defaultNotifier.reset
