@@ -17,6 +17,16 @@ describe('cart', () => {
     expect(res.body.items).to.deep.equal([])
   })
 
+  it('returns 200 for two concurrent requests to a fresh cart id', async () => {
+    const [first, second] = await Promise.all([
+      request.execute(app).get('/api/cart/cart-concurrent'),
+      request.execute(app).get('/api/cart/cart-concurrent')
+    ])
+
+    expect(first).to.have.status(200)
+    expect(second).to.have.status(200)
+  })
+
   it('adds an item and returns it populated', async () => {
     const product = await Product.create({ name: 'Mug', price: 12, stock: 3 })
 
