@@ -86,6 +86,15 @@ describe('rank', () => {
     expect(result).to.have.length(2)
   })
 
+  it('sorts by score descending even when that reverses the candidates own id order', () => {
+    const candidates = [movie('a', ['drama'], 5), movie('z', ['drama'], 9)]
+    const signals = { likedGenres: [], dislikedGenres: [], watchedGenres: [] }
+
+    const result = rank(candidates, signals)
+
+    expect(result.map((entry) => entry.movie._id)).to.deep.equal(['z', 'a'])
+  })
+
   it('breaks ties deterministically by ascending _id', () => {
     const candidates = [movie('b', ['drama'], 7), movie('a', ['drama'], 7)]
     const signals = { likedGenres: [], dislikedGenres: [], watchedGenres: [] }

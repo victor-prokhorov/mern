@@ -197,6 +197,12 @@ describe('GET /api/notifications', () => {
     expect(res.body[0]._id).to.equal(unread._id.toString())
     expect(res.body[1]._id).to.equal(read._id.toString())
   })
+
+  it('rejects a request with no x-user-id header', async () => {
+    const res = await request.execute(app).get('/api/notifications')
+
+    expect(res).to.have.status(401)
+  })
 })
 
 describe('POST /api/notifications/:id/read', () => {
@@ -224,6 +230,17 @@ describe('POST /api/notifications/:id/read', () => {
     const res = await request.execute(app).post(`/api/notifications/${notification._id}/read`).set('x-user-id', intruder._id.toString())
 
     expect(res).to.have.status(404)
+    const stored = await Notification.findById(notification._id)
+    expect(stored.readAt).to.equal(null)
+  })
+
+  it('rejects a request with no x-user-id header', async () => {
+    const actor = await Actor.create({ name: 'Keanu Reeves' })
+    const notification = await Notification.create({ user: new mongoose.Types.ObjectId(), type: 'actor_in_new_movie', actor: actor._id, movie: new mongoose.Types.ObjectId() })
+
+    const res = await request.execute(app).post(`/api/notifications/${notification._id}/read`)
+
+    expect(res).to.have.status(401)
     const stored = await Notification.findById(notification._id)
     expect(stored.readAt).to.equal(null)
   })
