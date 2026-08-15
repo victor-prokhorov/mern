@@ -5,6 +5,7 @@ import { connect } from './db.js'
 import * as usersRepo from './repositories/users.js'
 import * as ticketsRepo from './repositories/tickets.js'
 import * as ticketEventsRepo from './repositories/ticketEvents.js'
+import * as blockedTermsRepo from './repositories/blockedTerms.js'
 
 export const password = 'demo1234'
 
@@ -65,10 +66,26 @@ export async function seedTickets(people) {
   return created
 }
 
+export const blockedTermSpecs = [
+  { term: 'suspicious', severity: 'flag', matchType: 'word' },
+  { term: 'unacceptable', severity: 'block', matchType: 'word' },
+  { term: 'ass', severity: 'flag', matchType: 'substring' }
+]
+
+export async function seedBlockedTerms(createdBy) {
+  await blockedTermsRepo.deleteAll()
+  const created = []
+  for (const spec of blockedTermSpecs) {
+    created.push(await blockedTermsRepo.create({ ...spec, createdBy }))
+  }
+  return created
+}
+
 if (process.env.NODE_ENV !== 'test') {
   await connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mern-tickets')
   const people = await seedUsers()
   await seedTickets(people)
+  await seedBlockedTerms(people[0]._id)
   await mongoose.disconnect()
-  console.log(`seeded ${people.length} users and 5 tickets. password for all: ${password}`)
+  console.log(`seeded ${people.length} users, 5 tickets, and ${blockedTermSpecs.length} blocked terms. password for all: ${password}`)
 }
