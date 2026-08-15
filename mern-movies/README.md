@@ -33,14 +33,12 @@ app beyond its own database name).
 cd server
 npm install
 npm run seed    # ~25 movies across 8 genres, 12 actors, 3 users (one admin)
-npm start       # listens on PORT (default 5001)
+npm start       # listens on PORT (default 5003)
 ```
 
-`mern-tickets` also defaults to 5001, so the two cannot run at the same
-time on a default `.env`. Whichever starts second dies with
-`EADDRINUSE`. If you want both up — reading two guides side by side, for
-instance — start one of them on another port: `PORT=5002 npm start`, and
-substitute that port into the curls below.
+`mern-tickets` defaults to 5001 and `mern-movies` to 5003, so the two can run
+side by side on their default `.env`s — useful for reading two guides at
+once, since several cross-reference each other's walkthroughs.
 
 Run the tests (uses a separate `mern-movies-test` database, dropped
 and its indexes resynced before every test):
@@ -70,11 +68,11 @@ seeded 12 actors, 25 movies, 3 users
 Actor and movie ids come from the list endpoints, unauthenticated:
 
 ```
-curl http://localhost:5001/api/actors
-curl http://localhost:5001/api/movies
+curl http://localhost:5003/api/actors
+curl http://localhost:5003/api/movies
 
-curl http://localhost:5001/api/recommendations -H "x-user-id: <user id from the seed output>"
+curl http://localhost:5003/api/recommendations -H "x-user-id: <user id from the seed output>"
 
-curl -X POST http://localhost:5001/api/actors/<actor id>/follow \
+curl -X POST http://localhost:5003/api/actors/<actor id>/follow \
   -H "x-user-id: <user id from the seed output>"
 ```

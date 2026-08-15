@@ -35,7 +35,7 @@ npm run migrate
 npm run dev
 ```
 
-API on `http://localhost:5002`, which does not collide with anything else in this repo (`mern-shop` is 5000, `mern-tickets` and `mern-movies` both default to 5001).
+API on `http://localhost:5002`, which does not collide with anything else in this repo (`mern-shop` is 5000, `mern-tickets` is 5001, `mern-movies` is 5003).
 
 `.env.example` points `DATABASE_URL` at `postgres://postgres:postgres@127.0.0.1:5432/ledger` and ships `OUTBOX_TARGET_URL` empty. That is deliberate: with no target set, `src/index.js` never starts the relay's `setInterval` at all, so the app runs fine with nothing on the receiving end and outbox rows simply accumulate unpublished. Set it to enable delivery (see [`src/outbox/README.md`](src/outbox/README.md), which ships a fake target you can point it at).
 

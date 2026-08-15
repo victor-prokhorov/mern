@@ -423,7 +423,7 @@ two-tower plus ANN as the frontier, because it is now the baseline.
 npm run seed
 npm start
 
-curl http://localhost:5001/api/recommendations \
+curl http://localhost:5003/api/recommendations \
   -H "x-user-id: <a user id from the seed output>"
 ```
 

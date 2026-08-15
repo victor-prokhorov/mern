@@ -2,7 +2,7 @@ import 'dotenv/config'
 import app from './app.js'
 import { connect } from './db.js'
 
-const port = process.env.PORT || 5001
+const port = process.env.PORT || 5003
 const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mern-movies'
 
 await connect(uri)

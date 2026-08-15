@@ -79,12 +79,12 @@ Two things `.env.example` does not tell you:
   `JWT_SECRET=dev-secret npm run dev`. The blocklist guide additionally needs
   `ADMIN_TOKEN` and the password-reset guide needs `EXPOSE_RESET_TOKEN=1`; see
   [mern-shop/README.md](mern-shop/README.md) for the table.
-- **`mern-tickets` and `mern-movies` both default to port 5001.** Whichever
-  starts second dies with `EADDRINUSE`. Run one of them with `PORT=5002` — or,
-  since `sql-ledger` owns 5002, pick anything free.
 
-Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5001,
-`sql-ledger` 5002, `mern-shop`'s Vite client 5173.
+Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
+`sql-ledger` 5002, `mern-shop`'s Vite client 5173. Each app's `.env.example`
+now ships its own distinct default, so any two (or all four) can run side by
+side without an `EADDRINUSE` — which several guides' "Try it" sections
+already assumed when they point at each other.
 
 `mern-shop` also has a client:
 

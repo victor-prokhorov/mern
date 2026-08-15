@@ -17,10 +17,8 @@ npm run seed
 npm run dev
 ```
 
-API on `http://localhost:5001`. Note `mern-movies` defaults to the same
-port, so the two cannot both run on a default `.env` — whichever starts
-second dies with `EADDRINUSE`. Start one of them with `PORT=5002` if you
-want both. `npm run seed` creates one admin, two agents, three reporters (`ada@tickets.test` / `gale@tickets.test` / `remy@tickets.test` / `rae@tickets.test` / `sam@tickets.test` / `lee@tickets.test`, password `demo1234` for all) and five tickets spread across statuses.
+API on `http://localhost:5001`. `mern-movies` defaults to `5003`, so the two
+can run side by side on their default `.env`s. `npm run seed` creates one admin, two agents, three reporters (`ada@tickets.test` / `gale@tickets.test` / `remy@tickets.test` / `rae@tickets.test` / `sam@tickets.test` / `lee@tickets.test`, password `demo1234` for all) and five tickets spread across statuses.
 
 ## Tests
 
