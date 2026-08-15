@@ -17,9 +17,9 @@ function clampLimit(rawLimit) {
 
 function assertValidTransferInput({ reference, fromAccountId, toAccountId, amountMinor }) {
   if (!reference || typeof reference !== 'string') throw new BadRequestError('reference is required')
-  if (!Number.isInteger(fromAccountId) || !Number.isInteger(toAccountId)) throw new BadRequestError('fromAccountId and toAccountId must be integers')
+  if (!Number.isSafeInteger(fromAccountId) || !Number.isSafeInteger(toAccountId)) throw new BadRequestError('fromAccountId and toAccountId must be integers')
   if (fromAccountId === toAccountId) throw new BadRequestError('fromAccountId and toAccountId must differ')
-  if (!Number.isInteger(amountMinor) || amountMinor <= 0) throw new BadRequestError('amountMinor must be a positive integer')
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new BadRequestError('amountMinor must be a positive integer within the safe integer range')
 }
 
 export async function createTransfer({ reference, fromAccountId, toAccountId, amountMinor }) {

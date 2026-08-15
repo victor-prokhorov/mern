@@ -71,6 +71,15 @@ describe('ledger', () => {
     expect(caught.message).to.include('do not sum to zero')
   })
 
+  it('rejects an amountMinor beyond the safely representable integer range', async () => {
+    const from = await createAccount({ name: 'alice' })
+    const to = await createAccount({ name: 'bob' })
+
+    const res = await request.execute(app).post('/api/transfers').send({ reference: 'unsafe-1', fromAccountId: from.id, toAccountId: to.id, amountMinor: 9007199254740993 })
+
+    expect(res).to.have.status(400)
+  })
+
   it('stores a hostile reference value as data rather than executing it', async () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
