@@ -1,8 +1,7 @@
 import { expect, use } from 'chai'
-import chaiHttp, { request } from 'chai-http'
-import app from '../src/app.js'
+import chaiHttp from 'chai-http'
 import { pool } from '../src/db.js'
-import { useTestDb, createAccount } from './helpers.js'
+import { useTestDb, createAccount, httpAgent } from './helpers.js'
 
 use(chaiHttp)
 
@@ -13,7 +12,7 @@ describe('ledger', () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: 'tx-1', fromAccountId: from.id, toAccountId: to.id, amountMinor: 500 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: 'tx-1', fromAccountId: from.id, toAccountId: to.id, amountMinor: 500 })
 
     expect(res).to.have.status(201)
     const { rows } = await pool.query('SELECT amount_minor FROM entries WHERE transfer_id = $1 ORDER BY id', [res.body.id])
@@ -25,7 +24,7 @@ describe('ledger', () => {
   it('rejects a transfer to a non-existent account and leaves nothing behind', async () => {
     const from = await createAccount({ name: 'alice' })
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: 'tx-2', fromAccountId: from.id, toAccountId: from.id + 999999, amountMinor: 100 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: 'tx-2', fromAccountId: from.id, toAccountId: from.id + 999999, amountMinor: 100 })
 
     expect(res).to.have.status(400)
     const transfers = await pool.query('SELECT * FROM transfers WHERE reference = $1', ['tx-2'])
@@ -37,9 +36,9 @@ describe('ledger', () => {
   it('rejects a duplicate reference', async () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
-    await request.execute(app).post('/api/transfers').send({ reference: 'tx-dup', fromAccountId: from.id, toAccountId: to.id, amountMinor: 100 })
+    await httpAgent.post('/api/transfers').send({ reference: 'tx-dup', fromAccountId: from.id, toAccountId: to.id, amountMinor: 100 })
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: 'tx-dup', fromAccountId: from.id, toAccountId: to.id, amountMinor: 100 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: 'tx-dup', fromAccountId: from.id, toAccountId: to.id, amountMinor: 100 })
 
     expect(res).to.have.status(409)
   })
@@ -47,9 +46,9 @@ describe('ledger', () => {
   it('computes balance as the sum of entries', async () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
-    await request.execute(app).post('/api/transfers').send({ reference: 'tx-3', fromAccountId: from.id, toAccountId: to.id, amountMinor: 700 })
+    await httpAgent.post('/api/transfers').send({ reference: 'tx-3', fromAccountId: from.id, toAccountId: to.id, amountMinor: 700 })
 
-    const res = await request.execute(app).get(`/api/accounts/${to.id}/balance`)
+    const res = await httpAgent.get(`/api/accounts/${to.id}/balance`)
 
     expect(res).to.have.status(200)
     expect(res.body.balanceMinor).to.equal('700')
@@ -75,7 +74,7 @@ describe('ledger', () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: 'unsafe-1', fromAccountId: from.id, toAccountId: to.id, amountMinor: 9007199254740993 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: 'unsafe-1', fromAccountId: from.id, toAccountId: to.id, amountMinor: 9007199254740993 })
 
     expect(res).to.have.status(400)
   })
@@ -85,7 +84,7 @@ describe('ledger', () => {
     const to = await createAccount({ name: 'bob' })
     const hostile = "x'); DROP TABLE transfers; --"
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: hostile, fromAccountId: from.id, toAccountId: to.id, amountMinor: 50 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: hostile, fromAccountId: from.id, toAccountId: to.id, amountMinor: 50 })
 
     expect(res).to.have.status(201)
     expect(res.body.reference).to.equal(hostile)

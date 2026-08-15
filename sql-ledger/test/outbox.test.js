@@ -1,12 +1,11 @@
 import { expect, use } from 'chai'
-import chaiHttp, { request } from 'chai-http'
+import chaiHttp from 'chai-http'
 import http from 'node:http'
-import app from '../src/app.js'
 import { pool } from '../src/db.js'
 import * as outboxRepo from '../src/repositories/outbox.js'
 import * as transfersRepo from '../src/repositories/transfers.js'
 import { relayOnce, deliver, backoffMs, claimBatch, createGuardedPoll } from '../src/outbox/relay.js'
-import { useTestDb, createAccount, makeTransfer as makeTransferShared } from './helpers.js'
+import { useTestDb, createAccount, makeTransfer as makeTransferShared, httpAgent } from './helpers.js'
 
 use(chaiHttp)
 
@@ -61,7 +60,7 @@ describe('transactional outbox', () => {
   it('leaves no outbox row for a rolled-back transfer, even though the outbox insert already ran earlier in that same (rolled-back) transaction', async () => {
     const alice = await createAccount({ name: 'alice' })
 
-    const res = await request.execute(app).post('/api/transfers').send({ reference: 'ob-2', fromAccountId: alice.id, toAccountId: alice.id + 999999, amountMinor: 100 })
+    const res = await httpAgent.post('/api/transfers').send({ reference: 'ob-2', fromAccountId: alice.id, toAccountId: alice.id + 999999, amountMinor: 100 })
 
     expect(res).to.have.status(400)
     const { rows } = await pool.query('SELECT * FROM outbox')

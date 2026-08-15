@@ -1,8 +1,7 @@
 import { expect, use } from 'chai'
-import chaiHttp, { request } from 'chai-http'
-import app from '../src/app.js'
+import chaiHttp from 'chai-http'
 import { pool } from '../src/db.js'
-import { useTestDb, createAccount, makeTransfer as makeTransferShared } from './helpers.js'
+import { useTestDb, createAccount, makeTransfer as makeTransferShared, httpAgent } from './helpers.js'
 
 use(chaiHttp)
 
@@ -11,12 +10,12 @@ function makeTransfer(fromAccountId, toAccountId, reference) {
 }
 
 async function keysetPage(query) {
-  const res = await request.execute(app).get('/api/transfers').query(query)
+  const res = await httpAgent.get('/api/transfers').query(query)
   return res
 }
 
 async function offsetPage(query) {
-  const res = await request.execute(app).get('/api/transfers/offset-demo').query(query)
+  const res = await httpAgent.get('/api/transfers/offset-demo').query(query)
   return res
 }
 
