@@ -1,10 +1,10 @@
 import { expect, use } from 'chai'
-import chaiHttp from 'chai-http'
+import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
 
-const chai = use(chaiHttp)
+use(chaiHttp)
 
 describe('POST /api/auth/login', () => {
   useTestDb()
@@ -12,7 +12,7 @@ describe('POST /api/auth/login', () => {
   it('returns the user without the password hash', async () => {
     await seedUsers()
 
-    const res = await chai.request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+    const res = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
 
     expect(res).to.have.status(200)
     expect(res.body.email).to.equal(seedUser.email)
@@ -24,7 +24,7 @@ describe('POST /api/auth/login', () => {
   it('rejects a wrong password', async () => {
     await seedUsers()
 
-    const res = await chai.request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: 'wrong' })
+    const res = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: 'wrong' })
 
     expect(res).to.have.status(401)
     expect(res.body.error).to.equal('invalid credentials')
@@ -33,7 +33,7 @@ describe('POST /api/auth/login', () => {
   it('rejects an unknown email', async () => {
     await seedUsers()
 
-    const res = await chai.request.execute(app).post('/api/auth/login').send({ email: 'nobody@shop.test', password: seedUser.password })
+    const res = await request.execute(app).post('/api/auth/login').send({ email: 'nobody@shop.test', password: seedUser.password })
 
     expect(res).to.have.status(401)
     expect(res.body.error).to.equal('invalid credentials')
@@ -42,7 +42,7 @@ describe('POST /api/auth/login', () => {
   it('rejects a request missing credentials', async () => {
     await seedUsers()
 
-    const res = await chai.request.execute(app).post('/api/auth/login').send({ email: seedUser.email })
+    const res = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email })
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('email and password are required')
