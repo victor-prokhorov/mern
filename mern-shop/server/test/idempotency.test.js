@@ -237,4 +237,21 @@ describe('idempotency keys', () => {
     expect(failed).to.have.length(9)
     failed.forEach((attempt) => expect(attempt.reason.code).to.equal(11000))
   })
+
+  it('claim never silently hands a second caller the first caller\'s already-claimed record', async () => {
+    const first = await idempotencyKeysRepo.claim({ key: 'sequential-race-key', user: testUserClaimRace, requestFingerprint: 'fp', expiresAt: new Date(Date.now() + 60000) })
+
+    let secondThrew = false
+    let secondCode = null
+    try {
+      await idempotencyKeysRepo.claim({ key: 'sequential-race-key', user: testUserClaimRace, requestFingerprint: 'fp', expiresAt: new Date(Date.now() + 60000) })
+    } catch (err) {
+      secondThrew = true
+      secondCode = err.code
+    }
+
+    expect(first).to.exist
+    expect(secondThrew).to.equal(true)
+    expect(secondCode).to.equal(11000)
+  })
 })
