@@ -167,5 +167,24 @@ describe('webhook notifier', () => {
       delete process.env.TICKET_WEBHOOK_URL
       await stopFakeUpstream(server)
     })
+
+    it('returns the create response well before a slow webhook call would resolve', async () => {
+      const server = await startFakeUpstream((req, res) => { setTimeout(() => { res.writeHead(200); res.end() }, 300) })
+      process.env.TICKET_WEBHOOK_URL = urlFor(server)
+      const [, , , rae] = await seedUsers()
+      const start = Date.now()
+
+      const res = await request
+        .execute(app)
+        .post('/api/tickets')
+        .set('x-user-id', rae._id.toString())
+        .send({ title: 't', body: 'must not wait on a slow webhook', priority: 'normal' })
+      const elapsed = Date.now() - start
+
+      expect(res).to.have.status(201)
+      expect(elapsed).to.be.lessThan(150)
+      delete process.env.TICKET_WEBHOOK_URL
+      await stopFakeUpstream(server)
+    })
   })
 })
