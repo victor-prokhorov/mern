@@ -5,7 +5,7 @@ import app from '../src/app.js'
 import { pool } from '../src/db.js'
 import * as outboxRepo from '../src/repositories/outbox.js'
 import * as transfersRepo from '../src/repositories/transfers.js'
-import { relayOnce, deliver, backoffMs, claimBatch } from '../src/outbox/relay.js'
+import { relayOnce, deliver, backoffMs, claimBatch, createGuardedPoll } from '../src/outbox/relay.js'
 import { useTestDb, createAccount, makeTransfer as makeTransferShared } from './helpers.js'
 
 use(chaiHttp)
@@ -207,5 +207,28 @@ describe('transactional outbox', () => {
     expect(elapsedMs).to.be.lessThan(1000)
     expect(rows.map((row) => row.aggregate_id)).to.not.include(locked.id)
     expect(rows.map((row) => row.aggregate_id)).to.include(free.id)
+  })
+
+  it('the poll guard skips an overlapping tick, so a slow upstream never gets the same row delivered twice', async () => {
+    const receivedIds = []
+    const { server, url } = await startFakeUpstream((req, res, body) => {
+      setTimeout(() => {
+        receivedIds.push(body.id)
+        res.writeHead(200)
+        res.end()
+      }, 400)
+    })
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    await makeTransfer(alice.id, bob.id, 'poll-guard-1')
+
+    const poll = createGuardedPoll(() => relayOnce({ pool, targetUrl: url, batchSize: 10, maxAttempts: 5 }))
+    const firstTick = poll()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const secondTick = poll()
+    await Promise.all([firstTick, secondTick])
+
+    expect(receivedIds).to.have.length(1)
+    await stopFakeUpstream(server)
   })
 })

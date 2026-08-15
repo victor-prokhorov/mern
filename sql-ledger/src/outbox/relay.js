@@ -49,3 +49,18 @@ export async function relayOnce({ pool, targetUrl, batchSize = 10, maxAttempts =
   }
   return rows.length
 }
+
+export function createGuardedPoll(fn, { onError = () => {} } = {}) {
+  let running = false
+  return async () => {
+    if (running) return
+    running = true
+    try {
+      await fn()
+    } catch (err) {
+      onError(err)
+    } finally {
+      running = false
+    }
+  }
+}
