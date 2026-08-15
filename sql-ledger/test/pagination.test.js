@@ -2,18 +2,12 @@ import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import { pool } from '../src/db.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, createAccount, makeTransfer as makeTransferShared } from './helpers.js'
 
 use(chaiHttp)
 
-async function createAccount(overrides = {}) {
-  const res = await request.execute(app).post('/api/accounts').send({ name: 'acc', currency: 'USD', ...overrides })
-  return res.body
-}
-
-async function makeTransfer(fromAccountId, toAccountId, reference) {
-  const res = await request.execute(app).post('/api/transfers').send({ reference, fromAccountId, toAccountId, amountMinor: 1 })
-  return res.body
+function makeTransfer(fromAccountId, toAccountId, reference) {
+  return makeTransferShared(fromAccountId, toAccountId, 1, reference)
 }
 
 async function keysetPage(query) {

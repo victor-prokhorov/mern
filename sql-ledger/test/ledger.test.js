@@ -2,14 +2,9 @@ import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import { pool } from '../src/db.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, createAccount } from './helpers.js'
 
 use(chaiHttp)
-
-async function createAccount(overrides = {}) {
-  const res = await request.execute(app).post('/api/accounts').send({ name: 'acc', currency: 'USD', ...overrides })
-  return res.body
-}
 
 describe('ledger', () => {
   useTestDb()

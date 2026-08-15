@@ -1,23 +1,13 @@
-import { expect, use } from 'chai'
-import chaiHttp, { request } from 'chai-http'
-import app from '../src/app.js'
+import { expect } from 'chai'
+import pg from 'pg'
 import { pool } from '../src/db.js'
 import * as accountsRepo from '../src/repositories/accounts.js'
 import { backfillBatch, backfillBalances } from '../src/migrations/backfill.js'
 import { verifyBalances } from '../src/migrations/verify.js'
 import { migrate, status } from '../src/migrations/runner.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, createAccount, makeTransfer } from './helpers.js'
 
-use(chaiHttp)
-
-async function createAccount(overrides = {}) {
-  const res = await request.execute(app).post('/api/accounts').send({ name: 'acc', currency: 'USD', ...overrides })
-  return res.body
-}
-
-async function makeTransfer(fromAccountId, toAccountId, amountMinor, reference) {
-  return request.execute(app).post('/api/transfers').send({ reference, fromAccountId, toAccountId, amountMinor })
-}
+const { Pool } = pg
 
 describe('expand-contract migration to a stored balance', () => {
   useTestDb()
@@ -33,6 +23,8 @@ describe('expand-contract migration to a stored balance', () => {
     const firstBatchRowCount = await backfillBatch(pool, 1)
     const afterFirstBatch = await pool.query('SELECT balance_minor FROM accounts ORDER BY id')
     await backfillBalances(pool, { batchSize: 1 })
+    await pool.query('ALTER TABLE accounts ADD CONSTRAINT balance_minor_not_null CHECK (balance_minor IS NOT NULL) NOT VALID')
+    await pool.query('ALTER TABLE accounts VALIDATE CONSTRAINT balance_minor_not_null')
 
     expect(firstBatchRowCount).to.equal(1)
     expect(afterFirstBatch.rows.some((row) => row.balance_minor === null)).to.equal(true)
@@ -75,16 +67,20 @@ describe('expand-contract migration to a stored balance', () => {
     expect(found.derived).to.equal(500n)
   })
 
-  it('applies the full migration sequence cleanly against a fresh database, and running it twice is a no-op', async () => {
-    await pool.query('DROP SCHEMA public CASCADE')
-    await pool.query('CREATE SCHEMA public')
+  it('applies the full migration sequence cleanly from scratch, and running it twice is a no-op', async () => {
+    const schemaName = `scratch_full_seq_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    await pool.query(`CREATE SCHEMA "${schemaName}"`)
+    const scratchPool = new Pool({ connectionString: process.env.DATABASE_URL })
+    scratchPool.on('connect', (client) => client.query(`SET search_path TO "${schemaName}"`))
 
-    const firstRun = await migrate(pool)
-    const secondRun = await migrate(pool)
+    const firstRun = await migrate(scratchPool)
+    const secondRun = await migrate(scratchPool)
+    const rows = await status(scratchPool)
+    await scratchPool.end()
+    await pool.query(`DROP SCHEMA "${schemaName}" CASCADE`)
 
     expect(firstRun.length).to.be.greaterThan(0)
     expect(secondRun).to.deep.equal([])
-    const rows = await status(pool)
     expect(rows.every((row) => row.applied)).to.equal(true)
   })
 })
