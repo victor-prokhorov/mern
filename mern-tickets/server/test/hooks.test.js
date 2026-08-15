@@ -92,7 +92,9 @@ describe('moderation hooks wired into ticket creation', () => {
 
     expect(res).to.have.status(201)
     expect(res.body.moderation.flagged).to.equal(true)
-    expect(res.body.moderation.terms).to.include('link-limit-exceeded')
+    expect(res.body.moderation).to.not.have.property('terms')
+    const stored = await Ticket.findById(res.body._id)
+    expect(stored.moderation.terms).to.include('link-limit-exceeded')
   })
 
   it('does not flag a ticket with 3 or fewer links', async () => {
