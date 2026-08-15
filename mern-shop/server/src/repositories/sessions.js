@@ -24,6 +24,10 @@ export function revokeFamily(familyId, now) {
   return Session.updateMany({ familyId, revokedAt: null }, { $set: { revokedAt: now } })
 }
 
+export function revokeAllForUser(userId, now) {
+  return Session.updateMany({ user: userId, revokedAt: null }, { $set: { revokedAt: now } })
+}
+
 export async function isFamilyRevoked(familyId) {
   const match = await Session.exists({ familyId, revokedAt: { $ne: null } })
   return Boolean(match)

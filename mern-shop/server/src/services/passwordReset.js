@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import * as passwordResets from '../repositories/passwordResets.js'
 import * as users from '../repositories/users.js'
+import * as sessions from '../repositories/sessions.js'
 import { BadRequestError } from '../middleware/error.js'
 
 const TOKEN_TTL_MS = 15 * 60 * 1000
@@ -35,6 +36,7 @@ export async function resetPassword(rawToken, password) {
   if (!record) throw new BadRequestError(RESET_TOKEN_INVALID)
   const passwordHash = await bcrypt.hash(password, 10)
   await users.updatePasswordHash(record.user, passwordHash)
+  await sessions.revokeAllForUser(record.user, now)
   await passwordResets.invalidateOthersForUser(record.user, record._id)
   return { message: 'password has been reset' }
 }
