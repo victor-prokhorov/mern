@@ -119,7 +119,7 @@ describe('keyword blocking on ticket creation', () => {
     expect(count).to.equal(0)
   })
 
-  it('persists flagged content with moderation metadata', async () => {
+  it('persists flagged content with moderation metadata, without exposing the matched term to the reporter', async () => {
     const [ada, , , rae] = await seedUsers()
     await BlockedTerm.create({ term: 'suspicious', severity: 'flag', matchType: 'word', createdBy: ada._id })
 
@@ -131,9 +131,27 @@ describe('keyword blocking on ticket creation', () => {
 
     expect(res).to.have.status(201)
     expect(res.body.moderation.flagged).to.equal(true)
-    expect(res.body.moderation.terms).to.deep.equal(['suspicious'])
+    expect(res.body.moderation).to.not.have.property('terms')
+    const stored = await Ticket.findById(res.body._id)
+    expect(stored.moderation.terms).to.deep.equal(['suspicious'])
     const count = await Ticket.countDocuments()
     expect(count).to.equal(1)
+  })
+
+  it('reveals the matched term to an agent in the same team, but never to the reporter', async () => {
+    const [ada, gale, , rae] = await seedUsers()
+    await BlockedTerm.create({ term: 'suspicious', severity: 'flag', matchType: 'word', createdBy: ada._id })
+    const created = await request
+      .execute(app)
+      .post('/api/tickets')
+      .set('x-user-id', rae._id.toString())
+      .send({ title: 'issue', body: 'this looks suspicious to me', priority: 'normal' })
+
+    const asReporter = await request.execute(app).get(`/api/tickets/${created.body._id}`).set('x-user-id', rae._id.toString())
+    const asAgent = await request.execute(app).get(`/api/tickets/${created.body._id}`).set('x-user-id', gale._id.toString())
+
+    expect(asReporter.body.ticket.moderation).to.not.have.property('terms')
+    expect(asAgent.body.ticket.moderation.terms).to.deep.equal(['suspicious'])
   })
 
   it('does not flag content with no blocked terms', async () => {
