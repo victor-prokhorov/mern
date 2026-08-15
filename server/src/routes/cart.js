@@ -7,9 +7,7 @@ import { BadRequestError, NotFoundError } from '../middleware/error.js'
 const router = Router()
 
 async function loadCart(cartId) {
-  const existing = await Cart.findOne({ cartId })
-  if (existing) return existing
-  return Cart.create({ cartId, items: [] })
+  return Cart.findOneAndUpdate({ cartId }, { $setOnInsert: { items: [] } }, { upsert: true, returnDocument: 'after' })
 }
 
 function parseQty(value) {
