@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const REQ_RES_PATTERN = /\b(req|res)\b[.,)]/
+export const REQ_RES_PATTERN = /\b(req|res)\b\s*(?:[[.,)]|;|$)/
 export const SQL_PATTERN = /\b(SELECT|INSERT INTO|UPDATE\s+\w+\s+SET|DELETE FROM|CREATE TABLE|ALTER TABLE)\b/i
 
 export function listJsFiles(dir) {

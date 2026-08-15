@@ -31,4 +31,11 @@ describe('check-layers', () => {
     expect(REQ_RES_PATTERN.test('function leak(req, res) {')).to.equal(true)
     expect(REQ_RES_PATTERN.test('const results = []')).to.equal(false)
   })
+
+  it('also matches bracket access, a space before the dot, and a bare trailing return', () => {
+    expect(REQ_RES_PATTERN.test('res["status"](201)')).to.equal(true)
+    expect(REQ_RES_PATTERN.test('res .status(201)')).to.equal(true)
+    expect(REQ_RES_PATTERN.test('  return res')).to.equal(true)
+    expect(REQ_RES_PATTERN.test('const res = await fetch(url)')).to.equal(false)
+  })
 })

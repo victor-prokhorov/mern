@@ -15,7 +15,7 @@ A transfer writes exactly two entries whose `amount_minor` sum to zero, dual-wri
 
 ## Layering
 
-`routes/` wire, `controllers/` adapt HTTP, `services/` hold rules, `repositories/` own every SQL statement — no SQL outside `repositories/` (the numbered files under `migrations/` are the one documented exception; they *are* the DDL layer), no `req`/`res` in services or repositories. `npm run lint:layers` runs both greps and reports what it found (nothing, on this branch).
+`routes/` wire, `controllers/` adapt HTTP, `services/` hold rules, `repositories/` own every SQL statement — no SQL outside `repositories/` (the numbered files under `migrations/` are the one documented exception; they *are* the DDL layer), no `req`/`res` in services or repositories. `npm run lint:layers` runs both greps and reports what it found (nothing, on this branch). Both are line-based regexes, not an AST check — they catch every shape found in review (`res.status(...)`, `res["status"]`, `res .status`, a bare trailing `return res`) but a sufficiently indirect reference (e.g. aliasing `res` to another name first) would still slip through.
 
 ## Run it
 
