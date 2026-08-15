@@ -8,6 +8,8 @@ import Product from '../src/models/product.js'
 import Order from '../src/models/order.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import * as usersRepo from '../src/repositories/users.js'
+import * as sessionsRepo from '../src/repositories/sessions.js'
+import * as authService from '../src/services/auth.js'
 import { requireAuth } from '../src/middleware/auth.js'
 import { signAccessToken } from '../src/session/tokens.js'
 import { useTestDb } from './helpers.js'
@@ -124,7 +126,7 @@ describe('sessions', () => {
     expect(afterLogout).to.have.status(401)
   })
 
-  it('a revoked family cannot be resurrected by an old access token beyond its expiry', async () => {
+  it('an expired access token from a revoked family is still rejected, purely on expiry', async () => {
     const user = await seedUsers()
     const loginRes = await login(seedUser.email, seedUser.password)
     await request.execute(app).post('/api/auth/logout').send({ refreshToken: loginRes.body.refreshToken })
@@ -134,5 +136,65 @@ describe('sessions', () => {
     const res = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${expiredAccessToken}`)
 
     expect(res).to.have.status(401)
+  })
+
+  it('a revoked family cannot be resurrected, but its still-unexpired access token keeps working until it expires — the short expiry is the whole revocation mechanism', async () => {
+    const user = await seedUsers()
+    const loginRes = await login(seedUser.email, seedUser.password)
+    await request.execute(app).post('/api/auth/logout').send({ refreshToken: loginRes.body.refreshToken })
+    const protectedApp = buildProtectedApp()
+    const stillValidAccessToken = signAccessToken({ sub: user._id.toString(), sid: 'whichever-family' }, { expiresInSeconds: 60 })
+
+    const res = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${stillValidAccessToken}`)
+
+    expect(res).to.have.status(200)
+  })
+
+  it('rejects order placement with no Authorization header', async () => {
+    await setUpCart()
+
+    const res = await request.execute(app).post('/api/orders').send({ cartId: 'cart-1', customer })
+
+    expect(res).to.have.status(401)
+  })
+
+  it('rejects order placement with a non-Bearer authentication scheme', async () => {
+    await setUpCart()
+    const loginRes = await login(seedUser.email, seedUser.password)
+
+    const res = await request
+      .execute(app)
+      .post('/api/orders')
+      .set('Authorization', `Basic ${loginRes.body.accessToken}`)
+      .send({ cartId: 'cart-1', customer })
+
+    expect(res).to.have.status(401)
+  })
+
+  it('rejects a token signed with a different HMAC algorithm than the pinned HS256', async () => {
+    const protectedApp = buildProtectedApp()
+    const wrongAlgorithm = jwt.sign({ sub: 'user-1', sid: 'family-1' }, process.env.JWT_SECRET, { algorithm: 'HS512' })
+
+    const res = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${wrongAlgorithm}`)
+
+    expect(res).to.have.status(401)
+  })
+
+  it('rotation closes the gap between consuming the old token and issuing the new one: a family revoked in that window does not let the replacement survive', async () => {
+    await seedUsers()
+    const loginRes = await login(seedUser.email, seedUser.password)
+
+    let threw = false
+    try {
+      await authService.refresh(loginRes.body.refreshToken, {
+        afterConsume: async (consumed) => {
+          await sessionsRepo.revokeFamily(consumed.familyId, new Date())
+        }
+      })
+    } catch (err) {
+      threw = true
+    }
+
+    expect(threw).to.equal(true)
   })
 })

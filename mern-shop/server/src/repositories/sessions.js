@@ -23,3 +23,8 @@ export function markReplacedBy(id, replacedBy) {
 export function revokeFamily(familyId, now) {
   return Session.updateMany({ familyId, revokedAt: null }, { $set: { revokedAt: now } })
 }
+
+export async function isFamilyRevoked(familyId) {
+  const match = await Session.exists({ familyId, revokedAt: { $ne: null } })
+  return Boolean(match)
+}

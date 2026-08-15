@@ -25,12 +25,13 @@ export async function login(email, password) {
   return { user, accessToken, refreshToken }
 }
 
-export async function refresh(rawRefreshToken) {
+export async function refresh(rawRefreshToken, hooks = {}) {
   if (!rawRefreshToken) throw new BadRequestError('refresh token is required')
   const tokenHash = hashRefreshToken(rawRefreshToken)
   const now = new Date()
   const consumed = await sessions.consumeToken(tokenHash, now)
   if (consumed) {
+    if (hooks.afterConsume) await hooks.afterConsume(consumed)
     const { accessToken, refreshToken, tokenHash: newTokenHash } = await issueSession(consumed.user, consumed.familyId)
     await sessions.markReplacedBy(consumed._id, newTokenHash)
     return { accessToken, refreshToken }
