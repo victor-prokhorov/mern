@@ -146,26 +146,24 @@ describe('transactional outbox', () => {
     await stopFakeUpstream(server)
   })
 
-  it('never delivers the same row twice when two relay workers claim concurrently', async () => {
-    const receivedIds = []
-    const { server, url } = await startFakeUpstream((req, res, body) => {
-      receivedIds.push(body.id)
-      res.writeHead(200)
-      res.end()
-    })
+  it('never delivers the same row twice: two genuinely overlapping claims never return overlapping rows', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
     for (let i = 0; i < 6; i += 1) await makeTransfer(alice.id, bob.id, `ob-conc-${i}`)
+    const holder = await pool.connect()
+    await holder.query('BEGIN')
+    const heldRows = await outboxRepo.claimUnpublished(holder, { batchSize: 3, maxAttempts: 5 })
 
-    await Promise.all([
-      relayOnce({ pool, targetUrl: url, batchSize: 3, maxAttempts: 5 }),
-      relayOnce({ pool, targetUrl: url, batchSize: 3, maxAttempts: 5 })
-    ])
+    const secondClaim = await claimBatch(pool, { batchSize: 10, maxAttempts: 5 })
+    await holder.query('COMMIT')
+    holder.release()
 
-    const counts = receivedIds.reduce((acc, id) => acc.set(id, (acc.get(id) || 0) + 1), new Map())
-    expect(receivedIds).to.have.length(6)
-    expect([...counts.values()].every((count) => count === 1)).to.equal(true)
-    await stopFakeUpstream(server)
+    const heldIds = heldRows.map((row) => row.id)
+    const secondIds = secondClaim.map((row) => row.id)
+    const overlap = heldIds.filter((id) => secondIds.includes(id))
+    expect(heldIds).to.have.length(3)
+    expect(overlap).to.have.length(0)
+    expect(heldIds.length + secondIds.length).to.equal(6)
   })
 
   it('delivers a row twice when the relay crashes between delivery and marking it published', async () => {
