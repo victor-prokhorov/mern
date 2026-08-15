@@ -152,8 +152,8 @@ on every write, or recompute at intervals via an aggregation pipeline —
 which is the actual design decision hiding behind "a real system would
 recompute it." This toy does neither: it skips the aggregation entirely
 and seeds `averageRating` as a fixed field on `Movie`, so the
-recommender in Task 2 has a ready-made quality signal without needing a
-real rating distribution behind it. In a real system, `POST
+[recommender](../recommendations/README.md) has a ready-made quality
+signal without needing a real rating distribution behind it. In a real system, `POST
 /api/ratings` would trigger a recompute; here it does not, and that gap
 is intentional and documented rather than silently missing. It is also
 the reason the popularity-amplification feedback loop described in

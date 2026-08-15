@@ -266,6 +266,19 @@ at all.
 This implementation has none of it: no outbox collection, no background
 worker, no retry. It swallows the failure and moves on.
 
+If you want to read a working one rather than only the description,
+`sql-ledger` in this repo has the whole pattern built on Postgres, where
+the transaction the pattern needs is available without changing the
+deployment topology:
+[`../../../../sql-ledger/src/outbox/README.md`](../../../../sql-ledger/src/outbox/README.md)
+covers the entity-and-outbox-row-in-one-transaction write, the polling
+relay with `FOR UPDATE SKIP LOCKED` so two relays never claim the same
+row, exponential backoff with jitter on retry, and dead-lettering after
+a bounded number of attempts. Read it beside this section and the
+difference is exactly the gap this app has: there, the intent to notify
+is durable the instant the entity is; here it is a `try`/`catch` that
+logs.
+
 **Backfill and replay.** Because `fanoutNewMovie` is idempotent by
 construction, it is also naturally replayable: if a bug in this
 implementation silently dropped fan-out for a batch of movies added
@@ -340,7 +353,10 @@ this notification type entirely), none of which exist here.
 - No retry queue for failed fan-outs — a failure is logged
   (`movies.js:28`) and never attempted again automatically. This is the
   single change that would move the system from at-most-once to
-  effectively-once, since the dedupe half is already built.
+  effectively-once, since the dedupe half is already built. The retry
+  machinery it would need — attempt counting, exponential backoff with
+  jitter, and a dead-letter terminal state — is implemented in
+  [`../../../../sql-ledger/src/outbox/README.md`](../../../../sql-ledger/src/outbox/README.md).
 - No wait for index builds on startup — the unique index that the
   dedupe depends on is created asynchronously by Mongoose and never
   awaited outside the test helper, so a brand-new database has a window

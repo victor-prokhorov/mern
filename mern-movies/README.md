@@ -36,6 +36,12 @@ npm run seed    # ~25 movies across 8 genres, 12 actors, 3 users (one admin)
 npm start       # listens on PORT (default 5001)
 ```
 
+`mern-tickets` also defaults to 5001, so the two cannot run at the same
+time on a default `.env`. Whichever starts second dies with
+`EADDRINUSE`. If you want both up — reading two guides side by side, for
+instance — start one of them on another port: `PORT=5002 npm start`, and
+substitute that port into the curls below.
+
 Run the tests (uses a separate `mern-movies-test` database, dropped
 and its indexes resynced before every test):
 
