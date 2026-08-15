@@ -94,4 +94,14 @@ describe('orders', () => {
     expect(res).to.have.status(404)
     expect(res.body.error).to.equal('order not found')
   })
+
+  it('rejects a cart containing a deleted product', async () => {
+    const { user, mug } = await setUpCart()
+    await Product.deleteOne({ _id: mug._id })
+
+    const res = await request.execute(app).post('/api/orders').send({ cartId: 'cart-1', userId: user._id.toString(), customer })
+
+    expect(res).to.have.status(400)
+    expect(res.body.error).to.equal('cart contains an unavailable product')
+  })
 })

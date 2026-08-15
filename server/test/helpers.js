@@ -7,6 +7,7 @@ export function useTestDb() {
   })
   beforeEach(async () => {
     await mongoose.connection.dropDatabase()
+    await Promise.all(Object.values(mongoose.models).map((model) => model.syncIndexes()))
   })
   after(async () => {
     await mongoose.disconnect()

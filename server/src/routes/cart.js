@@ -7,9 +7,7 @@ import { BadRequestError, NotFoundError } from '../middleware/error.js'
 const router = Router()
 
 async function loadCart(cartId) {
-  const existing = await Cart.findOne({ cartId })
-  if (existing) return existing
-  return Cart.create({ cartId, items: [] })
+  return Cart.findOneAndUpdate({ cartId }, { $setOnInsert: { items: [] } }, { upsert: true, returnDocument: 'after' })
 }
 
 function parseQty(value) {
@@ -26,6 +24,9 @@ function requireItem(cart, productId) {
 
 async function send(res, cart) {
   await cart.populate('items.product')
+  const staleCount = cart.items.length
+  cart.items = cart.items.filter((entry) => entry.product !== null)
+  if (cart.items.length !== staleCount) await cart.save()
   res.json(cart)
 }
 
