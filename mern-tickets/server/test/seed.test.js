@@ -1,5 +1,6 @@
 import { expect } from 'chai'
 import BlockedTerm from '../src/models/blockedTerm.js'
+import { ALLOWLIST } from '../src/moderation/keywords.js'
 import { seedUsers, seedBlockedTerms, blockedTermSpecs } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
 
@@ -26,6 +27,7 @@ describe('seedBlockedTerms', () => {
     expect(severities).to.include('block')
     expect(severities).to.include('flag')
     const substringTerm = await BlockedTerm.findOne({ matchType: 'substring' })
-    expect(substringTerm.term).to.equal('ass')
+    expect(substringTerm.term).to.equal('cunt')
+    expect(ALLOWLIST).to.include('scunthorpe')
   })
 })

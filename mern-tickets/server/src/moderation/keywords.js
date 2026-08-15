@@ -1,6 +1,6 @@
 import { normalize } from './normalize.js'
 
-export const ALLOWLIST = ['assassin']
+export const ALLOWLIST = ['scunthorpe']
 
 export const MIN_SUBSTRING_TERM_LENGTH = 4
 

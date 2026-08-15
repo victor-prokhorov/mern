@@ -69,7 +69,7 @@ export async function seedTickets(people) {
 export const blockedTermSpecs = [
   { term: 'suspicious', severity: 'flag', matchType: 'word' },
   { term: 'unacceptable', severity: 'block', matchType: 'word' },
-  { term: 'ass', severity: 'flag', matchType: 'substring' }
+  { term: 'cunt', severity: 'flag', matchType: 'substring' }
 ]
 
 export async function seedBlockedTerms(createdBy) {
