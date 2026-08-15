@@ -121,6 +121,17 @@ describe('optimistic concurrency', () => {
     expect(events[0].version).to.equal(2)
   })
 
+  it('records the resulting version on the audit event for a successful assignee change', async () => {
+    const [, gale, , rae] = await seedUsers()
+    const created = await createTicket(rae._id.toString())
+
+    await request.execute(app).patch(`/api/tickets/${created.body._id}/assignee`).set('x-user-id', gale._id.toString()).set('If-Match', '"1"').send({ assigneeId: gale._id.toString() })
+
+    const events = await TicketEvent.find({ ticket: created.body._id, type: 'assignee_changed' })
+    expect(events).to.have.length(1)
+    expect(events[0].version).to.equal(2)
+  })
+
   it('redacts moderation terms from the 412 conflict body for a subject who cannot see them', async () => {
     const [, , , rae] = await seedUsers()
     const created = await createTicket(rae._id.toString())
