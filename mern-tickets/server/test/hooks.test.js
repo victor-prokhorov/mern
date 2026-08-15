@@ -57,6 +57,19 @@ describe('hook registry', () => {
     expect(outcome.payload.value).to.equal(2)
   })
 
+  it('leaves the payload unchanged when a transform result has no payload', async () => {
+    register('test:transform', () => ({ action: 'transform' }))
+    register('test:transform', (payload) => {
+      expect(payload).to.deep.equal({ value: 0 })
+      return { action: 'continue' }
+    })
+
+    const outcome = await run('test:transform', { value: 0 })
+
+    expect(outcome.action).to.equal('continue')
+    expect(outcome.payload).to.deep.equal({ value: 0 })
+  })
+
   it('skips a throwing handler without failing the run', async () => {
     let secondRan = false
     register('test:throw', () => {
