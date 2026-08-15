@@ -38,9 +38,23 @@ describe('createGuardedPoll', () => {
     expect(calls).to.equal(2)
   })
 
-  it('clears the guard even when the wrapped function throws', async () => {
+  it('clears the guard even when the wrapped function returns a rejected promise', async () => {
     let calls = 0
     const fn = async () => {
+      calls += 1
+      throw new Error('boom')
+    }
+    const poll = createGuardedPoll(fn)
+
+    await poll()
+    await poll()
+
+    expect(calls).to.equal(2)
+  })
+
+  it('clears the guard even when the wrapped function throws synchronously, before returning a promise', async () => {
+    let calls = 0
+    const fn = () => {
       calls += 1
       throw new Error('boom')
     }
