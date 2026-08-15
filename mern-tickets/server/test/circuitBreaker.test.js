@@ -1,5 +1,6 @@
 import { expect } from 'chai'
 import { createCircuitBreaker, CircuitBreakerOpenError } from '../src/circuitBreaker/breaker.js'
+import { errorHandler } from '../src/middleware/error.js'
 
 async function captureRejection(promise) {
   try {
@@ -8,6 +9,14 @@ async function captureRejection(promise) {
   } catch (err) {
     return err
   }
+}
+
+function fakeResponse() {
+  const res = { statusCode: null, headers: {}, body: null }
+  res.status = (code) => { res.statusCode = code; return res }
+  res.set = (key, value) => { res.headers[key] = value; return res }
+  res.json = (payload) => { res.body = payload; return res }
+  return res
 }
 
 describe('circuit breaker', () => {
@@ -158,5 +167,18 @@ describe('circuit breaker', () => {
     const stats = breaker.stats()
 
     expect(stats).to.deep.equal({ state: 'closed', total: 5, failures: 3, successes: 2 })
+  })
+
+  it('maps a rejection while open to 503 with Retry-After via the shared error handler', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    const err = await captureRejection(breaker.call(() => 'ok'))
+    const res = fakeResponse()
+
+    errorHandler(err, {}, res, () => {})
+
+    expect(res.statusCode).to.equal(503)
+    expect(res.headers['Retry-After']).to.equal(String(err.retryAfter))
   })
 })
