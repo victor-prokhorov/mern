@@ -18,6 +18,9 @@ use(chaiHttp)
 const testUserConcurrent = '64b7f0f0f0f0f0f0f0f0f0f1'
 const testUser5xx = '64b7f0f0f0f0f0f0f0f0f0f2'
 const testUser4xx = '64b7f0f0f0f0f0f0f0f0f0f3'
+const testUserSlowComplete = '64b7f0f0f0f0f0f0f0f0f0f4'
+const testUserSlowRelease = '64b7f0f0f0f0f0f0f0f0f0f5'
+const testUserClaimRace = '64b7f0f0f0f0f0f0f0f0f0f6'
 
 const customer = { name: 'Ada', email: 'ada@shop.test', address: '1 Main Street' }
 
@@ -44,6 +47,31 @@ function buildFailingIdempotentApp(status) {
   built.use(express.json())
   built.use('/orders', idempotency({ userIdFrom: (req) => req.get('x-test-user') }), (req, res) => {
     res.status(status).json({ error: 'boom' })
+  })
+  return built
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function buildSlowStoreApp(status, delayMs) {
+  const store = {
+    claim: idempotencyKeysRepo.claim,
+    findByKeyAndUser: idempotencyKeysRepo.findByKeyAndUser,
+    markCompleted: async (id, response) => {
+      await delay(delayMs)
+      return idempotencyKeysRepo.markCompleted(id, response)
+    },
+    release: async (id) => {
+      await delay(delayMs)
+      return idempotencyKeysRepo.release(id)
+    }
+  }
+  const built = express()
+  built.use(express.json())
+  built.use('/orders', idempotency({ store, userIdFrom: (req) => req.get('x-test-user') }), (req, res) => {
+    res.status(status).json({ ok: true })
   })
   return built
 }
@@ -174,5 +202,39 @@ describe('idempotency keys', () => {
 
     expect(a).to.equal(b)
     expect(a).to.not.equal(c)
+  })
+
+  it('stores the completed response before answering, so an immediate replay never races the write', async () => {
+    const slowStoreApp = buildSlowStoreApp(201, 150)
+
+    const first = await request.execute(slowStoreApp).post('/orders').set('x-test-user', testUserSlowComplete).set('Idempotency-Key', 'slow-complete-key').send({ a: 1 })
+    const second = await request.execute(slowStoreApp).post('/orders').set('x-test-user', testUserSlowComplete).set('Idempotency-Key', 'slow-complete-key').send({ a: 1 })
+
+    expect(first).to.have.status(201)
+    expect(second).to.have.status(201)
+    expect(second.headers['idempotent-replay']).to.equal('true')
+  })
+
+  it('releases the claim before answering on a 5xx, so an immediate retry never races the delete', async () => {
+    const slowStoreApp = buildSlowStoreApp(500, 150)
+
+    const first = await request.execute(slowStoreApp).post('/orders').set('x-test-user', testUserSlowRelease).set('Idempotency-Key', 'slow-release-key').send({ a: 1 })
+    const second = await request.execute(slowStoreApp).post('/orders').set('x-test-user', testUserSlowRelease).set('Idempotency-Key', 'slow-release-key').send({ a: 1 })
+
+    expect(first).to.have.status(500)
+    expect(second).to.have.status(500)
+    expect(second.headers['idempotent-replay']).to.equal(undefined)
+  })
+
+  it('claim is atomic: hammering the same key and user concurrently produces exactly one winner', async () => {
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 10 }, () => idempotencyKeysRepo.claim({ key: 'race-key', user: testUserClaimRace, requestFingerprint: 'fp', expiresAt: new Date(Date.now() + 60000) }))
+    )
+
+    const succeeded = attempts.filter((attempt) => attempt.status === 'fulfilled')
+    const failed = attempts.filter((attempt) => attempt.status === 'rejected')
+    expect(succeeded).to.have.length(1)
+    expect(failed).to.have.length(9)
+    failed.forEach((attempt) => expect(attempt.reason.code).to.equal(11000))
   })
 })
