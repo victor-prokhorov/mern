@@ -27,16 +27,16 @@ export async function createTransfer({ reference, fromAccountId, toAccountId, am
   try {
     return await withTransaction(async (client) => {
       const transfer = await transfersRepo.create(client, { reference, status: 'completed' })
-      await entriesRepo.create(client, { transferId: transfer.id, accountId: fromAccountId, amountMinor: -amountMinor })
-      await entriesRepo.create(client, { transferId: transfer.id, accountId: toAccountId, amountMinor })
-      await accountsRepo.adjustBalance(client, fromAccountId, -amountMinor)
-      await accountsRepo.adjustBalance(client, toAccountId, amountMinor)
       await outboxRepo.create(client, {
         aggregate: 'transfer',
         aggregateId: transfer.id,
         type: 'transfer.completed',
         payload: { transferId: transfer.id, reference: transfer.reference, fromAccountId, toAccountId, amountMinor }
       })
+      await entriesRepo.create(client, { transferId: transfer.id, accountId: fromAccountId, amountMinor: -amountMinor })
+      await entriesRepo.create(client, { transferId: transfer.id, accountId: toAccountId, amountMinor })
+      await accountsRepo.adjustBalance(client, fromAccountId, -amountMinor)
+      await accountsRepo.adjustBalance(client, toAccountId, amountMinor)
       return transfer
     })
   } catch (err) {

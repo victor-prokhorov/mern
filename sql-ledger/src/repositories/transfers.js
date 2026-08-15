@@ -20,7 +20,7 @@ export async function findByReference(client, reference) {
 }
 
 export async function findById(client, id) {
-  const { rows } = await client.query('SELECT id, reference, status, created_at FROM transfers WHERE id = $1', [id])
+  const { rows } = await client.query('SELECT id, reference, status, created_at, xmin::text AS xmin FROM transfers WHERE id = $1', [id])
   return rows[0] || null
 }
 

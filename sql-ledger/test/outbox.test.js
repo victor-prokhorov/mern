@@ -4,8 +4,9 @@ import http from 'node:http'
 import app from '../src/app.js'
 import { pool } from '../src/db.js'
 import * as outboxRepo from '../src/repositories/outbox.js'
-import { relayOnce, deliver, backoffMs } from '../src/outbox/relay.js'
-import { useTestDb } from './helpers.js'
+import * as transfersRepo from '../src/repositories/transfers.js'
+import { relayOnce, deliver, backoffMs, claimBatch } from '../src/outbox/relay.js'
+import { useTestDb, createAccount, makeTransfer as makeTransferShared } from './helpers.js'
 
 use(chaiHttp)
 
@@ -27,15 +28,8 @@ function stopFakeUpstream(server) {
   return new Promise((resolve) => server.close(resolve))
 }
 
-async function createAccount(overrides = {}) {
-  const res = await request.execute(app).post('/api/accounts').send({ name: 'acc', currency: 'USD', ...overrides })
-  return res.body
-}
-
-async function makeTransfer(fromAccountId, toAccountId, reference) {
-  const res = await request.execute(app).post('/api/transfers').send({ reference, fromAccountId, toAccountId, amountMinor: 100 })
-  if (res.status !== 201) throw new Error(`makeTransfer(${reference}) got ${res.status}: ${JSON.stringify(res.body)}`)
-  return res.body
+function makeTransfer(fromAccountId, toAccountId, reference) {
+  return makeTransferShared(fromAccountId, toAccountId, 100, reference)
 }
 
 describe('transactional outbox', () => {
@@ -52,11 +46,24 @@ describe('transactional outbox', () => {
     expect(rows[0].published_at).to.equal(null)
   })
 
-  it('leaves no outbox row for a rolled-back transfer', async () => {
+  it('writes the transfer and its outbox row in the same transaction, proven by matching xmin', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+
+    const transfer = await makeTransfer(alice.id, bob.id, 'ob-xmin-1')
+
+    const transferRow = await transfersRepo.findById(pool, transfer.id)
+    const [outboxRow] = await outboxRepo.findByAggregate(pool, 'transfer', transfer.id)
+    expect(outboxRow.xmin).to.be.a('string')
+    expect(outboxRow.xmin).to.equal(transferRow.xmin)
+  })
+
+  it('leaves no outbox row for a rolled-back transfer, even though the outbox insert already ran earlier in that same (rolled-back) transaction', async () => {
     const alice = await createAccount({ name: 'alice' })
 
-    await request.execute(app).post('/api/transfers').send({ reference: 'ob-2', fromAccountId: alice.id, toAccountId: alice.id + 999999, amountMinor: 100 })
+    const res = await request.execute(app).post('/api/transfers').send({ reference: 'ob-2', fromAccountId: alice.id, toAccountId: alice.id + 999999, amountMinor: 100 })
 
+    expect(res).to.have.status(400)
     const { rows } = await pool.query('SELECT * FROM outbox')
     expect(rows).to.have.length(0)
   })
@@ -173,20 +180,32 @@ describe('transactional outbox', () => {
     const bob = await createAccount({ name: 'bob' })
     await makeTransfer(alice.id, bob.id, 'ob-crash')
 
-    const client = await pool.connect()
-    let claimed
-    try {
-      await client.query('BEGIN')
-      ;[claimed] = await outboxRepo.claimUnpublished(client, { batchSize: 1, maxAttempts: 5 })
-      await deliver(claimed, url)
-    } finally {
-      await client.query('ROLLBACK')
-      client.release()
-    }
+    const [claimed] = await claimBatch(pool, { batchSize: 1, maxAttempts: 5 })
+    await deliver(claimed, url)
     await relayOnce({ pool, targetUrl: url, batchSize: 10, maxAttempts: 5 })
 
     const duplicates = receivedIds.filter((id) => id === claimed.id)
     expect(duplicates).to.have.length(2)
     await stopFakeUpstream(server)
+  })
+
+  it('does not block on a row locked by another transaction, unlike plain FOR UPDATE', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const locked = await makeTransfer(alice.id, bob.id, 'lock-1')
+    const free = await makeTransfer(alice.id, bob.id, 'lock-2')
+    const holder = await pool.connect()
+    await holder.query('BEGIN')
+    await holder.query('SELECT id FROM outbox WHERE aggregate_id = $1 FOR UPDATE', [locked.id])
+
+    const startedAt = Date.now()
+    const rows = await claimBatch(pool, { batchSize: 10, maxAttempts: 5 })
+    const elapsedMs = Date.now() - startedAt
+
+    await holder.query('ROLLBACK')
+    holder.release()
+    expect(elapsedMs).to.be.lessThan(1000)
+    expect(rows.map((row) => row.aggregate_id)).to.not.include(locked.id)
+    expect(rows.map((row) => row.aggregate_id)).to.include(free.id)
   })
 })

@@ -1,6 +1,8 @@
 import pg from 'pg'
+import { request } from 'chai-http'
 import { pool } from '../src/db.js'
 import { migrate } from '../src/migrations/runner.js'
+import app from '../src/app.js'
 
 const { Pool } = pg
 
@@ -27,4 +29,16 @@ export function useTestDb() {
   beforeEach(async () => {
     await truncateAll()
   })
+}
+
+export async function createAccount(overrides = {}) {
+  const res = await request.execute(app).post('/api/accounts').send({ name: 'acc', currency: 'USD', ...overrides })
+  if (res.status !== 201) throw new Error(`createAccount(${JSON.stringify(overrides)}) got ${res.status}: ${JSON.stringify(res.body)}`)
+  return res.body
+}
+
+export async function makeTransfer(fromAccountId, toAccountId, amountMinor, reference) {
+  const res = await request.execute(app).post('/api/transfers').send({ reference, fromAccountId, toAccountId, amountMinor })
+  if (res.status !== 201) throw new Error(`makeTransfer(${reference}) got ${res.status}: ${JSON.stringify(res.body)}`)
+  return res.body
 }

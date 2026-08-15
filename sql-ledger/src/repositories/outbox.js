@@ -36,7 +36,7 @@ export async function deadLetter(client, id, { attempts, lastError }) {
 
 export async function findByAggregate(client, aggregate, aggregateId) {
   const { rows } = await client.query(
-    'SELECT id, aggregate, aggregate_id, type, payload, published_at, attempts, last_error, dead_lettered_at FROM outbox WHERE aggregate = $1 AND aggregate_id = $2',
+    'SELECT id, aggregate, aggregate_id, type, payload, published_at, attempts, last_error, dead_lettered_at, xmin::text AS xmin FROM outbox WHERE aggregate = $1 AND aggregate_id = $2',
     [aggregate, aggregateId]
   )
   return rows

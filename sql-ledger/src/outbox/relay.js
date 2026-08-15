@@ -15,28 +15,37 @@ export function backoffMs(attempts, { base = 100, cap = 30000, random = Math.ran
   return random() * capped
 }
 
-export async function relayOnce({ pool, targetUrl, batchSize = 10, maxAttempts = 5 }) {
+export async function claimBatch(pool, { batchSize, maxAttempts }) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
     const rows = await outboxRepo.claimUnpublished(client, { batchSize, maxAttempts })
-    for (const row of rows) {
-      try {
-        await deliver(row, targetUrl)
-        await outboxRepo.markPublished(client, row.id)
-      } catch (err) {
-        const attempts = row.attempts + 1
-        const message = err instanceof Error ? err.message : String(err)
-        if (attempts >= maxAttempts) await outboxRepo.deadLetter(client, row.id, { attempts, lastError: message })
-        else await outboxRepo.recordFailure(client, row.id, { attempts, lastError: message })
-      }
-    }
     await client.query('COMMIT')
-    return rows.length
+    return rows
   } catch (err) {
-    await client.query('ROLLBACK')
+    try {
+      await client.query('ROLLBACK')
+    } catch (rollbackErr) {
+      err.rollbackError = rollbackErr
+    }
     throw err
   } finally {
     client.release()
   }
+}
+
+export async function relayOnce({ pool, targetUrl, batchSize = 10, maxAttempts = 5 }) {
+  const rows = await claimBatch(pool, { batchSize, maxAttempts })
+  for (const row of rows) {
+    try {
+      await deliver(row, targetUrl)
+      await outboxRepo.markPublished(pool, row.id)
+    } catch (err) {
+      const attempts = row.attempts + 1
+      const message = err instanceof Error ? err.message : String(err)
+      if (attempts >= maxAttempts) await outboxRepo.deadLetter(pool, row.id, { attempts, lastError: message })
+      else await outboxRepo.recordFailure(pool, row.id, { attempts, lastError: message })
+    }
+  }
+  return rows.length
 }
