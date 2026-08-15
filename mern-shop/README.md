@@ -55,23 +55,22 @@ npm run dev
 
 Client on `http://localhost:5173`, proxying `/api` to the server on `:5000`.
 
-**The client's login and checkout are currently broken, and it is a code bug,
-not a setup problem.** Browsing, the cart, and product pages work. Checkout does
-not. Two changes landed on the server without being propagated to
-`client/src/`:
-
-- `POST /api/auth/login` now returns `{ user, accessToken, refreshToken }`
-  rather than the user document. `pages/Login.jsx` stores that whole envelope
-  as if it were the user, so `user._id` is `undefined` everywhere afterwards,
-  and both tokens are discarded.
-- `POST /api/orders` now requires `Authorization: Bearer <accessToken>` and
-  takes identity from the token
-  ([`server/src/session`](server/src/session/README.md)). `api.js`'s
-  `placeOrder` still sends `userId` in the body and no header, so it gets
-  `401 authentication required`.
-
-The API itself is fine — every curl in the server-side guides works. Use those
-until the client is caught up.
+**Login and checkout used to be broken here, and it was a code bug, not a
+setup problem.** Two changes had landed on the server without being
+propagated to `client/src/`: `POST /api/auth/login` started returning
+`{ user, accessToken, refreshToken }` rather than the user document, and
+`pages/Login.jsx` kept storing that whole envelope as if it were the user, so
+`user._id` was `undefined` everywhere afterwards and both tokens were
+discarded; separately, `POST /api/orders` started requiring
+`Authorization: Bearer <accessToken>` and taking identity from the token
+([`server/src/session`](server/src/session/README.md)), while `api.js`'s
+`placeOrder` kept sending `userId` in the body with no header, so it got
+`401 authentication required`. Both are fixed now: `api.js` stores the user
+and the two tokens under separate keys (`saveSession`/`loadUser`/
+`loadAccessToken`), `placeOrder` sends the access token as a bearer header
+and no longer sends `userId`, and a 401 from any authenticated call clears
+the stored session and bounces to the login page with a notice, rather than
+leaving the UI in a half-logged-in state.
 
 ## Topics
 

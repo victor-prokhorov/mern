@@ -9,7 +9,7 @@ export default function Checkout({ user, setPage }) {
   async function submit(event) {
     event.preventDefault()
     try {
-      const order = await placeOrder(user._id, { name, email, address })
+      const order = await placeOrder({ name, email, address })
       setPage({ name: 'order', id: order._id })
     } catch (err) {
       setError(err.message)

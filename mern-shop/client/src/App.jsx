@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { clearUser, loadUser } from './api.js'
+import { useEffect, useState } from 'react'
+import { clearSession, loadUser } from './api.js'
 import Products from './pages/Products.jsx'
 import ProductDetail from './pages/ProductDetail.jsx'
 import Cart from './pages/Cart.jsx'
@@ -11,10 +11,18 @@ export default function App() {
   const [page, setPage] = useState({ name: 'products' })
   const [user, setUser] = useState(loadUser())
   function signOut() {
-    clearUser()
+    clearSession()
     setUser(null)
     setPage({ name: 'products' })
   }
+  useEffect(() => {
+    function onSessionExpired() {
+      setUser(null)
+      setPage({ name: 'login', notice: 'your session expired, please log in again' })
+    }
+    window.addEventListener('shop:session-expired', onSessionExpired)
+    return () => window.removeEventListener('shop:session-expired', onSessionExpired)
+  }, [])
   return (
     <div>
       <h1>Shop</h1>
