@@ -20,6 +20,16 @@ npm run dev
 
 API on `http://localhost:5000`.
 
+## Client
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Client on `http://localhost:5173`, proxying `/api` to the server on `:5000`.
+
 ## Tests
 
 ```bash
