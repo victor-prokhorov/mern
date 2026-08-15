@@ -28,12 +28,20 @@ export function createCircuitBreaker(options = {}) {
   let halfOpenInFlight = 0
   let halfOpenSuccesses = 0
   function stats() {
+    pruneWindow(now())
     return {
       state,
       total: outcomes.length,
       failures: outcomes.filter((outcome) => !outcome.success).length,
       successes: outcomes.filter((outcome) => outcome.success).length
     }
+  }
+  function reset() {
+    state = CLOSED
+    openedAt = 0
+    outcomes = []
+    halfOpenInFlight = 0
+    halfOpenSuccesses = 0
   }
   function transition(next, t) {
     const previous = state
@@ -70,7 +78,8 @@ export function createCircuitBreaker(options = {}) {
     const t = now()
     evaluate(t)
     if (state === OPEN) throw new CircuitBreakerOpenError(state, openMs - (t - openedAt))
-    if (state === HALF_OPEN) {
+    const admittedAsTrial = state === HALF_OPEN
+    if (admittedAsTrial) {
       if (halfOpenInFlight >= halfOpenMaxCalls) throw new CircuitBreakerOpenError(state, 0)
       halfOpenInFlight += 1
     }
@@ -81,6 +90,8 @@ export function createCircuitBreaker(options = {}) {
     } catch (err) {
       if (isFailure(err)) record(false, now())
       throw err
+    } finally {
+      if (admittedAsTrial) halfOpenInFlight = Math.max(0, halfOpenInFlight - 1)
     }
   }
   return {
@@ -88,6 +99,7 @@ export function createCircuitBreaker(options = {}) {
     get state() {
       return state
     },
-    stats
+    stats,
+    reset
   }
 }
