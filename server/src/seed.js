@@ -2,8 +2,8 @@ import 'dotenv/config'
 import mongoose from 'mongoose'
 import bcrypt from 'bcrypt'
 import { connect } from './db.js'
-import Product from './models/product.js'
-import User from './models/user.js'
+import * as productsRepo from './repositories/products.js'
+import * as usersRepo from './repositories/users.js'
 
 export const products = [
   { name: 'Ceramic Mug', description: 'Holds coffee.', price: 12, image: 'https://placehold.co/200', stock: 25 },
@@ -17,16 +17,16 @@ export const products = [
 ]
 
 export async function seedProducts() {
-  await Product.deleteMany({})
-  return Product.insertMany(products)
+  await productsRepo.deleteAll()
+  return productsRepo.insertMany(products)
 }
 
 export const seedUser = { name: 'Demo User', email: 'demo@shop.test', password: 'demo1234' }
 
 export async function seedUsers() {
-  await User.deleteMany({})
+  await usersRepo.deleteAll()
   const passwordHash = await bcrypt.hash(seedUser.password, 10)
-  return User.create({ name: seedUser.name, email: seedUser.email, passwordHash })
+  return usersRepo.create({ name: seedUser.name, email: seedUser.email, passwordHash })
 }
 
 if (process.env.NODE_ENV !== 'test') {
