@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt'
 import * as users from '../repositories/users.js'
+import * as blocks from './blocks.js'
 import { BadRequestError, UnauthorizedError } from '../middleware/error.js'
 
 export async function login(email, password) {
@@ -7,5 +8,6 @@ export async function login(email, password) {
   const user = await users.findByEmail(email)
   const matches = user ? await bcrypt.compare(password, user.passwordHash) : false
   if (!matches) throw new UnauthorizedError('invalid credentials')
+  if (user.blockedAt || (await blocks.isBlockedEmail(user.email))) throw new UnauthorizedError('invalid credentials')
   return user
 }

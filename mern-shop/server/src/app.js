@@ -5,6 +5,7 @@ import products from './routes/products.js'
 import auth from './routes/auth.js'
 import cart from './routes/cart.js'
 import orders from './routes/orders.js'
+import blocks from './routes/blocks.js'
 import { errorHandler } from './middleware/error.js'
 import { rateLimit } from './middleware/rateLimit.js'
 
@@ -22,6 +23,7 @@ app.use('/api/auth/forgot-password', forgotPasswordEmailLimit)
 app.use('/api/auth', auth)
 app.use('/api/cart', cart)
 app.use('/api/orders', orders)
+app.use('/api/blocks', blocks)
 app.use(errorHandler)
 
 export default app

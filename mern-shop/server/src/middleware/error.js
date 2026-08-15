@@ -19,6 +19,13 @@ export class UnauthorizedError extends Error {
   }
 }
 
+export class ForbiddenError extends Error {
+  constructor(message) {
+    super(message)
+    this.status = 403
+  }
+}
+
 export function errorHandler(err, req, res, next) {
   if (err.name === 'ValidationError' || err.name === 'CastError') {
     return res.status(400).json({ error: err.message })
