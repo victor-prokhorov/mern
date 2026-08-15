@@ -53,6 +53,27 @@ describe('circuit breaker', () => {
     expect(breaker.state).to.equal('open')
   })
 
+  it('resolves with the wrapped function\'s own return value on success', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime })
+
+    const result = await breaker.call(() => 'the-actual-value')
+
+    expect(result).to.equal('the-actual-value')
+  })
+
+  it('trips exactly at the failure-rate threshold, not only strictly above it', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 4, failureRateThreshold: 0.5 })
+
+    for (let i = 0; i < 4; i++) await captureRejection(breaker.call(() => {
+      if (i < 2) throw new Error('boom')
+      return 'ok'
+    }))
+
+    expect(breaker.state).to.equal('open')
+  })
+
   it('rejects immediately while open, with the wrapped function never invoked', async () => {
     let currentTime = 0
     const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5 })
@@ -106,6 +127,25 @@ describe('circuit breaker', () => {
 
     expect(invokedTooEarly).to.equal(false)
     expect(breaker.state).to.equal('open')
+  })
+
+  it('admits only one trial concurrently by default when halfOpenMaxCalls is not given', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+    let resolveFirst
+    const slow = () => new Promise((resolve) => { resolveFirst = resolve })
+    let secondInvoked = false
+    const fast = () => { secondInvoked = true; return 'ok' }
+
+    const firstAttempt = breaker.call(slow)
+    const secondResult = await captureRejection(breaker.call(fast))
+    resolveFirst('done')
+    await firstAttempt
+
+    expect(secondResult).to.be.instanceOf(CircuitBreakerOpenError)
+    expect(secondInvoked).to.equal(false)
   })
 
   it('admits only halfOpenMaxCalls trials concurrently', async () => {
@@ -221,6 +261,29 @@ describe('circuit breaker', () => {
 
     expect(first).to.equal(null)
     expect(second).to.equal(null)
+    expect(breaker.state).to.equal('closed')
+  })
+
+  it('stays half-open after only one successful trial when successesToClose is 2', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000, successesToClose: 2 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 5000
+
+    await breaker.call(() => 'ok')
+
+    expect(breaker.state).to.equal('half-open')
+  })
+
+  it('ages failures out of the default 10 second rolling window when windowMs is not given', async () => {
+    let currentTime = 0
+    const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 3, failureRateThreshold: 0.5 })
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+    currentTime = 10000
+
+    await captureRejection(breaker.call(() => { throw new Error('boom') }))
+
     expect(breaker.state).to.equal('closed')
   })
 

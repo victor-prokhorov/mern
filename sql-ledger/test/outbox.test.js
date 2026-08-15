@@ -105,6 +105,14 @@ describe('transactional outbox', () => {
     await stopFakeUpstream(server)
   })
 
+  it('uses a default base of 100ms and a default cap of 30000ms when neither is given', () => {
+    const atZeroAttempts = backoffMs(0, { random: () => 1 })
+    const wellPastTheCap = backoffMs(20, { random: () => 1 })
+
+    expect(atZeroAttempts).to.equal(100)
+    expect(wellPastTheCap).to.equal(30000)
+  })
+
   it('grows the backoff delay with attempts and keeps it jittered within bounds', () => {
     const low = backoffMs(0, { base: 100, cap: 30000, random: () => 0 })
     const highAtZero = backoffMs(0, { base: 100, cap: 30000, random: () => 1 })

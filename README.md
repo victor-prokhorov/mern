@@ -44,6 +44,7 @@ Twenty-one guides, each beside the code it describes.
 | Zero-downtime migrations (expand-contract) | [sql-ledger/src/migrations](sql-ledger/src/migrations/README.md) |
 | Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
 | Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
+| Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
 
@@ -119,6 +120,22 @@ npm run test:ci # same, plus JUnit XML in test-results/
 354 tests across the four apps (124 shop, 134 tickets, 55 movies, 41 ledger).
 The MERN suites need a reachable MongoDB; `sql-ledger` needs a reachable
 Postgres and creates its own `ledger_test` database on first run.
+
+## Mutation testing
+
+`tools/mutation` is a hand-rolled mutation testing runner used to audit the
+test suites above — it mutates one line of source at a time, reruns the app's
+real test suite, and records whether the suite noticed. A green suite with a
+100% coverage report can still be at 0% mutation score if nothing checks the
+behaviour that changed, which is exactly the failure mode it exists to catch.
+
+```bash
+cd tools/mutation
+node cli.js --app mern-shop --files src/middleware/auth.js --max 20 --seed demo
+```
+
+See [tools/mutation/README.md](tools/mutation/README.md) for how it works and
+what running it against all four apps found.
 
 ## House rules
 
