@@ -1,6 +1,8 @@
 import { normalize } from './normalize.js'
 
-export const ALLOWLIST = ['assassin']
+export const ALLOWLIST = ['scunthorpe']
+
+export const MIN_SUBSTRING_TERM_LENGTH = 4
 
 function tokenize(text) {
   return text.split(/[^a-z0-9]+/).filter(Boolean)

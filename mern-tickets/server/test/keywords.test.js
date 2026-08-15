@@ -4,8 +4,8 @@ import app from '../src/app.js'
 import Ticket from '../src/models/ticket.js'
 import BlockedTerm from '../src/models/blockedTerm.js'
 import { toNFKC, stripZeroWidth, toLowerCase, mapHomoglyphs, collapseRepeats, normalize } from '../src/moderation/normalize.js'
-import { scan } from '../src/moderation/keywords.js'
-import { seedUsers } from '../src/seed.js'
+import { scan, ALLOWLIST, MIN_SUBSTRING_TERM_LENGTH } from '../src/moderation/keywords.js'
+import { seedUsers, seedBlockedTerms, blockedTermSpecs } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
 
 use(chaiHttp)
@@ -180,5 +180,91 @@ describe('keyword blocking on ticket creation', () => {
 
     expect(res).to.have.status(201)
     expect(res.body.moderation.flagged).to.equal(false)
+  })
+})
+
+describe('substring term length floor', () => {
+  useTestDb()
+
+  it('rejects a substring term that normalizes to fewer than the minimum characters', async () => {
+    const [ada] = await seedUsers()
+
+    const err = await BlockedTerm.create({ term: 'ass', severity: 'flag', matchType: 'substring', createdBy: ada._id }).catch((error) => error)
+
+    expect(err).to.be.an.instanceOf(Error)
+    expect(err.message).to.include(`substring terms must be at least ${MIN_SUBSTRING_TERM_LENGTH} characters after normalization`)
+    expect(await BlockedTerm.countDocuments()).to.equal(0)
+  })
+
+  it('measures the floor after normalization, not as typed', async () => {
+    const [ada] = await seedUsers()
+
+    const err = await BlockedTerm.create({ term: 'hell', severity: 'block', matchType: 'substring', createdBy: ada._id }).catch((error) => error)
+
+    expect(normalize('hell')).to.equal('hel')
+    expect(err).to.be.an.instanceOf(Error)
+    expect(err.message).to.include(`at least ${MIN_SUBSTRING_TERM_LENGTH} characters after normalization`)
+  })
+
+  it('accepts a substring term that is long enough after normalization', async () => {
+    const [ada] = await seedUsers()
+
+    const created = await BlockedTerm.create({ term: 'cunt', severity: 'flag', matchType: 'substring', createdBy: ada._id })
+
+    expect(created.term).to.equal('cunt')
+  })
+
+  it('leaves word terms free to be short, because they match a whole token', async () => {
+    const [ada] = await seedUsers()
+
+    const created = await BlockedTerm.create({ term: 'ass', severity: 'flag', matchType: 'word', createdBy: ada._id })
+
+    expect(created.term).to.equal('ass')
+  })
+})
+
+describe('substring precision against the seeded term list', () => {
+  useTestDb()
+
+  const innocent = [
+    'The password reset link is broken.',
+    'please open a case for this',
+    'the glass broke',
+    'a classic bug in the parser'
+  ]
+
+  for (const body of innocent) {
+    it(`does not flag ${JSON.stringify(body)}`, async () => {
+      const people = await seedUsers()
+      await seedBlockedTerms(people[0]._id)
+
+      const res = await request
+        .execute(app)
+        .post('/api/tickets')
+        .set('x-user-id', people[3]._id.toString())
+        .send({ title: 'issue', body, priority: 'normal' })
+
+      expect(res).to.have.status(201)
+      expect(res.body.moderation.flagged).to.equal(false)
+    })
+  }
+
+  it('seeds no substring term that would fail the length floor', () => {
+    const substringSpecs = blockedTermSpecs.filter((spec) => spec.matchType === 'substring')
+
+    const tooShort = substringSpecs.filter((spec) => normalize(spec.term).length < MIN_SUBSTRING_TERM_LENGTH)
+
+    expect(substringSpecs).to.not.have.length(0)
+    expect(tooShort).to.deep.equal([])
+  })
+
+  it('still matches the seeded substring term, and still exempts the allowlisted word that contains it', () => {
+    const substringSpecs = blockedTermSpecs.filter((spec) => spec.matchType === 'substring')
+
+    const withAllowlist = scan('I grew up in Scunthorpe', substringSpecs, ALLOWLIST)
+    const withoutAllowlist = scan('I grew up in Scunthorpe', substringSpecs, [])
+
+    expect(withAllowlist).to.deep.equal([])
+    expect(withoutAllowlist).to.have.length(1)
   })
 })
