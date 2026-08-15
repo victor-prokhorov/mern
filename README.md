@@ -71,7 +71,8 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-224 tests across the three apps. They need a reachable MongoDB.
+252 tests across the three apps (85 shop, 112 tickets, 55 movies). They need a
+reachable MongoDB.
 
 ## House rules
 
