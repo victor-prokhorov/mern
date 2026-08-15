@@ -1,11 +1,22 @@
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
+import Ticket from '../src/models/ticket.js'
 import TicketEvent from '../src/models/ticketEvent.js'
 import { seedUsers } from '../src/seed.js'
+import { casWriteOrConflict } from '../src/services/tickets.js'
 import { useTestDb } from './helpers.js'
 
 use(chaiHttp)
+
+async function captureRejection(promise) {
+  try {
+    await promise
+    return null
+  } catch (err) {
+    return err
+  }
+}
 
 async function createTicket(userId, overrides = {}) {
   return request
@@ -108,5 +119,15 @@ describe('optimistic concurrency', () => {
     const events = await TicketEvent.find({ ticket: created.body._id, type: 'status_changed' })
     expect(events).to.have.length(1)
     expect(events[0].version).to.equal(2)
+  })
+
+  it('redacts moderation terms from the 412 conflict body for a subject who cannot see them', async () => {
+    const [, , , rae] = await seedUsers()
+    const created = await createTicket(rae._id.toString())
+    const ticket = await Ticket.findById(created.body._id)
+
+    const err = await captureRejection(casWriteOrConflict(ticket, { status: 'ok', version: 999 }, { status: 'triaged' }, { role: 'reporter' }))
+
+    expect(err.ticket.moderation).to.deep.equal({ flagged: false })
   })
 })

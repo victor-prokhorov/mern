@@ -75,7 +75,7 @@ export async function get({ subject, id }) {
   return { ticket, comments: ticketComments, events }
 }
 
-async function casWriteOrConflict(ticket, ifMatch, update) {
+export async function casWriteOrConflict(ticket, ifMatch, update) {
   if (ifMatch.status === 'missing') throw new PreconditionRequiredError('If-Match header is required')
   if (ifMatch.status === 'malformed') throw new BadRequestError('malformed If-Match header')
   const updated = await tickets.updateIfVersionMatches(ticket._id, ifMatch.version, update)

@@ -1,15 +1,6 @@
 import * as tickets from '../services/tickets.js'
 import { formatETag, readIfMatch } from '../concurrency/etag.js'
-
-function canSeeModerationDetail(subject) {
-  return subject.role === 'agent' || subject.role === 'admin'
-}
-
-function viewModeratable(doc, subject) {
-  const json = doc.toJSON()
-  if (canSeeModerationDetail(subject)) return json
-  return { ...json, moderation: { flagged: json.moderation.flagged } }
-}
+import { viewModeratable } from '../moderation/view.js'
 
 export async function create(req, res) {
   const ticket = await tickets.create({ subject: req.subject, title: req.body.title, body: req.body.body, priority: req.body.priority })
