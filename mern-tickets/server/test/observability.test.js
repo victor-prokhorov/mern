@@ -6,7 +6,7 @@ import app from '../src/app.js'
 import { connect } from '../src/db.js'
 import { seedUsers } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
-import { runWithContext } from '../src/observability/context.js'
+import { runWithContext, getContext } from '../src/observability/context.js'
 import { logger, setWriter, resetWriter } from '../src/observability/logger.js'
 import { register, run, reset as resetHooks } from '../src/hooks/registry.js'
 import { createCircuitBreaker } from '../src/circuitBreaker/breaker.js'
@@ -63,6 +63,7 @@ describe('observability', () => {
   describe('context propagation into the call tree', () => {
     afterEach(() => {
       resetHooks('observability:test')
+      resetHooks('observability:isolation')
     })
 
     it('carries the request id into a hook handler\'s log line', async () => {
@@ -98,6 +99,23 @@ describe('observability', () => {
 
       const transitionLine = lines.find((line) => line.msg === 'breaker transitioned')
       expect(transitionLine.requestId).to.equal('req-in-breaker')
+    })
+
+    it('keeps two concurrent requests\' ids isolated across a real await inside a hook handler', async () => {
+      const observed = []
+      register('observability:isolation', async (payload) => {
+        await new Promise((resolve) => setTimeout(resolve, payload.delayMs))
+        observed.push({ expected: payload.requestId, actual: getContext().requestId })
+        return { action: 'continue' }
+      })
+
+      await Promise.all([
+        runWithContext({ requestId: 'req-slow', userId: null, route: '/test' }, () => run('observability:isolation', { requestId: 'req-slow', delayMs: 30 })),
+        runWithContext({ requestId: 'req-fast', userId: null, route: '/test' }, () => run('observability:isolation', { requestId: 'req-fast', delayMs: 5 }))
+      ])
+
+      expect(observed).to.have.length(2)
+      for (const entry of observed) expect(entry.actual).to.equal(entry.expected)
     })
   })
 
@@ -207,6 +225,11 @@ describe('observability', () => {
       })
       await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
       const port = server.address().port
+      const originalClose = server.close.bind(server)
+      server.close = (callback) => {
+        events.push('close-called')
+        return originalClose(callback)
+      }
       const shutdown = createGracefulShutdown({
         server,
         closeStore: async () => { events.push('store-closed') },
@@ -223,7 +246,7 @@ describe('observability', () => {
       await shutdownPromise
 
       expect(res.status).to.equal(200)
-      expect(events).to.deep.equal(['not-ready', 'store-closed', 'exited'])
+      expect(events).to.deep.equal(['not-ready', 'close-called', 'store-closed', 'exited'])
     })
   })
 })
