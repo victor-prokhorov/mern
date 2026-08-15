@@ -14,10 +14,20 @@ export function reset(event) {
 }
 
 function withTimeout(work) {
-  return Promise.race([
-    Promise.resolve().then(work),
-    new Promise((resolve, reject) => setTimeout(() => reject(new Error('handler timed out')), HANDLER_TIMEOUT_MS))
-  ])
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('handler timed out')), HANDLER_TIMEOUT_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+    Promise.resolve()
+      .then(work)
+      .then((result) => {
+        clearTimeout(timer)
+        resolve(result)
+      })
+      .catch((err) => {
+        clearTimeout(timer)
+        reject(err)
+      })
+  })
 }
 
 export async function run(event, payload) {
@@ -33,7 +43,7 @@ export async function run(event, payload) {
     }
     if (!result || result.action === 'continue') continue
     if (result.action === 'reject') return { action: 'reject', reason: result.reason }
-    if (result.action === 'transform') current = result.payload
+    if (result.action === 'transform' && result.payload !== undefined) current = result.payload
   }
   return { action: 'continue', payload: current }
 }
