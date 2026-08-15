@@ -19,20 +19,21 @@ export async function forgotPassword(email) {
   const tokenHash = hashToken(rawToken)
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS)
   await passwordResets.create({ user: user._id, tokenHash, expiresAt })
-  console.log(`password reset token for ${email}: ${rawToken}`)
-  if (process.env.NODE_ENV !== 'production') return { message: GENERIC_MESSAGE, token: rawToken }
+  if (process.env.EXPOSE_RESET_TOKEN === '1') {
+    console.log(`password reset token for ${email}: ${rawToken}`)
+    return { message: GENERIC_MESSAGE, token: rawToken }
+  }
   return { message: GENERIC_MESSAGE }
 }
 
 export async function resetPassword(rawToken, password) {
   if (!password || password.length < 8) throw new BadRequestError('password must be at least 8 characters')
   const tokenHash = hashToken(rawToken || '')
-  const record = await passwordResets.findByTokenHash(tokenHash)
-  const isInvalid = !record || record.usedAt !== null || record.expiresAt.getTime() < Date.now()
-  if (isInvalid) throw new BadRequestError(RESET_TOKEN_INVALID)
+  const now = new Date()
+  const record = await passwordResets.consumeToken(tokenHash, now)
+  if (!record) throw new BadRequestError(RESET_TOKEN_INVALID)
   const passwordHash = await bcrypt.hash(password, 10)
   await users.updatePasswordHash(record.user, passwordHash)
-  await passwordResets.markUsed(record._id)
   await passwordResets.invalidateOthersForUser(record.user, record._id)
   return { message: 'password has been reset' }
 }

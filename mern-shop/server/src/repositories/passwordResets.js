@@ -4,12 +4,12 @@ export function create(doc) {
   return PasswordReset.create(doc)
 }
 
-export function findByTokenHash(tokenHash) {
-  return PasswordReset.findOne({ tokenHash })
-}
-
-export function markUsed(id) {
-  return PasswordReset.updateOne({ _id: id }, { usedAt: new Date() })
+export function consumeToken(tokenHash, now) {
+  return PasswordReset.findOneAndUpdate(
+    { tokenHash, usedAt: null, expiresAt: { $gt: now } },
+    { $set: { usedAt: now } },
+    { returnDocument: 'after' }
+  )
 }
 
 export function invalidateOthersForUser(userId, exceptId) {
