@@ -74,7 +74,7 @@ describe('tickets', () => {
     const [, gale, , rae] = await seedUsers()
     const first = await createTicket(rae._id.toString(), { priority: 'high' })
     await createTicket(rae._id.toString(), { priority: 'low', body: 'Export is very slow today.' })
-    await request.execute(app).patch(`/api/tickets/${first.body._id}/assignee`).set('x-user-id', gale._id.toString()).send({ assigneeId: gale._id.toString() })
+    await request.execute(app).patch(`/api/tickets/${first.body._id}/assignee`).set('x-user-id', gale._id.toString()).set('If-Match', '"1"').send({ assigneeId: gale._id.toString() })
 
     const byPriority = await request.execute(app).get('/api/tickets').set('x-user-id', rae._id.toString()).query({ priority: 'high' })
     const byAssignee = await request.execute(app).get('/api/tickets').set('x-user-id', rae._id.toString()).query({ assignee: gale._id.toString() })
@@ -122,7 +122,7 @@ describe('tickets', () => {
       const created = await createTicket(rae._id.toString())
       await Ticket.updateOne({ _id: created.body._id }, { status: from })
 
-      const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/status`).set('x-user-id', gale._id.toString()).send({ status: to })
+      const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/status`).set('x-user-id', gale._id.toString()).set('If-Match', '"1"').send({ status: to })
 
       expect(res).to.have.status(200)
       expect(res.body.status).to.equal(to)
@@ -167,7 +167,7 @@ describe('tickets', () => {
     const [, gale, , rae] = await seedUsers()
     const created = await createTicket(rae._id.toString())
 
-    const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/assignee`).set('x-user-id', gale._id.toString()).send({ assigneeId: gale._id.toString() })
+    const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/assignee`).set('x-user-id', gale._id.toString()).set('If-Match', '"1"').send({ assigneeId: gale._id.toString() })
 
     expect(res).to.have.status(200)
     expect(res.body.assignee).to.equal(gale._id.toString())

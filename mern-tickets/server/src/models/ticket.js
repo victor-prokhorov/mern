@@ -10,6 +10,7 @@ const ticketSchema = new mongoose.Schema(
     assignee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     teamId: { type: String, required: true },
     dueAt: { type: Date, required: true },
+    version: { type: Number, required: true, default: 1 },
     moderation: {
       flagged: { type: Boolean, default: false },
       terms: { type: [String], default: [] }

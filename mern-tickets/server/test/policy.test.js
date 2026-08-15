@@ -93,7 +93,7 @@ describe('policy engine', () => {
     const [, gale, , rae] = await seedUsers()
     const created = await request.execute(app).post('/api/tickets').set('x-user-id', rae._id.toString()).send({ title: 'a', body: 'b', priority: 'normal' })
 
-    const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/status`).set('x-user-id', gale._id.toString()).send({ status: 'triaged' })
+    const res = await request.execute(app).patch(`/api/tickets/${created.body._id}/status`).set('x-user-id', gale._id.toString()).set('If-Match', '"1"').send({ status: 'triaged' })
 
     expect(res).to.have.status(200)
   })

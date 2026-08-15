@@ -1,3 +1,5 @@
+import { logger } from '../observability/logger.js'
+
 const registrations = new Map()
 
 const HANDLER_TIMEOUT_MS = 50
@@ -38,7 +40,7 @@ export async function run(event, payload) {
     try {
       result = await withTimeout(() => handler(current))
     } catch (err) {
-      console.error(`hook handler failed for event=${event}: ${err instanceof Error ? err.message : String(err)}`)
+      logger.error('hook handler failed', { event, error: err instanceof Error ? err.message : String(err) })
       continue
     }
     if (!result || result.action === 'continue') continue

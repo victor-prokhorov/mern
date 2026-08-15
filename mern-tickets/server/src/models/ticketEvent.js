@@ -6,6 +6,7 @@ const ticketEventSchema = new mongoose.Schema({
   type: { type: String, required: true, enum: ['created', 'status_changed', 'assignee_changed', 'commented'] },
   from: { type: String, default: null },
   to: { type: String, default: null },
+  version: { type: Number, default: null },
   at: { type: Date, default: Date.now }
 })
 

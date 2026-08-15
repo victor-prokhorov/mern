@@ -20,6 +20,10 @@ export function save(ticket) {
   return ticket.save()
 }
 
+export function updateIfVersionMatches(id, expectedVersion, update) {
+  return Ticket.findOneAndUpdate({ _id: id, version: expectedVersion }, { $set: update, $inc: { version: 1 } }, { returnDocument: 'after' })
+}
+
 export function deleteAll() {
   return Ticket.deleteMany({})
 }
