@@ -13,7 +13,11 @@ export async function withTransaction(fn) {
     await client.query('COMMIT')
     return result
   } catch (err) {
-    await client.query('ROLLBACK')
+    try {
+      await client.query('ROLLBACK')
+    } catch (rollbackErr) {
+      err.rollbackError = rollbackErr
+    }
     throw err
   } finally {
     client.release()
