@@ -1,9 +1,18 @@
 import bcrypt from 'bcrypt'
+import crypto from 'node:crypto'
 import * as users from '../repositories/users.js'
 import * as sessions from '../repositories/sessions.js'
 import * as blocks from './blocks.js'
-import { hashRefreshToken } from '../session/tokens.js'
+import { signAccessToken, generateRefreshToken, hashRefreshToken, REFRESH_TOKEN_TTL_MS } from '../session/tokens.js'
 import { BadRequestError, UnauthorizedError } from '../middleware/error.js'
+
+async function issueSession(userId, familyId) {
+  const now = new Date()
+  const { raw, hash } = generateRefreshToken()
+  await sessions.create({ user: userId, familyId, tokenHash: hash, issuedAt: now, expiresAt: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS) })
+  const accessToken = signAccessToken({ sub: userId.toString(), sid: familyId })
+  return { accessToken, refreshToken: raw, tokenHash: hash }
+}
 
 export async function login(email, password) {
   if (!email || !password) throw new BadRequestError('email and password are required')
@@ -11,17 +20,30 @@ export async function login(email, password) {
   const matches = user ? await bcrypt.compare(password, user.passwordHash) : false
   if (!matches) throw new UnauthorizedError('invalid credentials')
   if (user.blockedAt || (await blocks.isBlockedEmail(user.email))) throw new UnauthorizedError('invalid credentials')
-  return user
+  const familyId = crypto.randomUUID()
+  const { accessToken, refreshToken } = await issueSession(user._id, familyId)
+  return { user, accessToken, refreshToken }
 }
 
 export async function refresh(rawRefreshToken) {
   if (!rawRefreshToken) throw new BadRequestError('refresh token is required')
   const tokenHash = hashRefreshToken(rawRefreshToken)
+  const now = new Date()
+  const consumed = await sessions.consumeToken(tokenHash, now)
+  if (consumed) {
+    const { accessToken, refreshToken, tokenHash: newTokenHash } = await issueSession(consumed.user, consumed.familyId)
+    await sessions.markReplacedBy(consumed._id, newTokenHash)
+    return { accessToken, refreshToken }
+  }
   const existing = await sessions.findByTokenHash(tokenHash)
-  if (!existing) throw new UnauthorizedError('invalid refresh token')
-  return { accessToken: 'stub-access-token', refreshToken: rawRefreshToken }
+  if (existing && existing.usedAt && !existing.revokedAt) await sessions.revokeFamily(existing.familyId, now)
+  throw new UnauthorizedError('invalid refresh token')
 }
 
 export async function logout(rawRefreshToken) {
+  if (!rawRefreshToken) throw new BadRequestError('refresh token is required')
+  const tokenHash = hashRefreshToken(rawRefreshToken)
+  const existing = await sessions.findByTokenHash(tokenHash)
+  if (existing) await sessions.revokeFamily(existing.familyId, new Date())
   return { message: 'logged out' }
 }

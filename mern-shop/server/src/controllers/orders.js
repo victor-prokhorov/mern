@@ -1,7 +1,7 @@
 import * as orders from '../services/orders.js'
 
 export async function place(req, res) {
-  const order = await orders.place(req.body)
+  const order = await orders.place({ cartId: req.body.cartId, customer: req.body.customer, userId: req.userId })
   res.status(201).json(order)
 }
 

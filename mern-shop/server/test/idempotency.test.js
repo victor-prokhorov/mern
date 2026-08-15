@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt'
 import express from 'express'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
@@ -5,12 +6,12 @@ import app from '../src/app.js'
 import Order from '../src/models/order.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
-import { seedUsers } from '../src/seed.js'
+import { seedUser, seedUsers } from '../src/seed.js'
 import { idempotency } from '../src/middleware/idempotency.js'
 import * as idempotencyKeysRepo from '../src/repositories/idempotencyKeys.js'
 import * as usersRepo from '../src/repositories/users.js'
 import { computeFingerprint } from '../src/idempotency/fingerprint.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, loginAs } from './helpers.js'
 
 use(chaiHttp)
 
@@ -21,11 +22,12 @@ const testUser4xx = '64b7f0f0f0f0f0f0f0f0f0f3'
 const customer = { name: 'Ada', email: 'ada@shop.test', address: '1 Main Street' }
 
 async function setUpCart(cartId = 'cart-1') {
-  const user = await seedUsers()
+  await seedUsers()
   const mug = await Product.create({ name: 'Mug', price: 12, stock: 3 })
   const poster = await Product.create({ name: 'Poster', price: 20, stock: 5 })
   await Cart.create({ cartId, items: [{ product: mug._id, qty: 2 }, { product: poster._id, qty: 1 }] })
-  return { user, mug, poster }
+  const session = await loginAs(app, seedUser.email, seedUser.password)
+  return { accessToken: session.accessToken }
 }
 
 function buildSlowIdempotentApp(delayMs) {
@@ -50,11 +52,11 @@ describe('idempotency keys', () => {
   useTestDb()
 
   it('replaying a key returns the identical body and creates exactly one order', async () => {
-    const { user } = await setUpCart()
-    const body = { cartId: 'cart-1', userId: user._id.toString(), customer }
+    const { accessToken } = await setUpCart()
+    const body = { cartId: 'cart-1', customer }
 
-    const first = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-1').send(body)
-    const second = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-1').send(body)
+    const first = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-1').send(body)
+    const second = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-1').send(body)
 
     expect(first).to.have.status(201)
     expect(second).to.have.status(201)
@@ -64,11 +66,11 @@ describe('idempotency keys', () => {
   })
 
   it('a replay carries the replay header and does not touch the cart again', async () => {
-    const { user } = await setUpCart()
-    const body = { cartId: 'cart-1', userId: user._id.toString(), customer }
-    await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-2').send(body)
+    const { accessToken } = await setUpCart()
+    const body = { cartId: 'cart-1', customer }
+    await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-2').send(body)
 
-    const replay = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-2').send(body)
+    const replay = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-2').send(body)
 
     expect(replay.headers['idempotent-replay']).to.equal('true')
     const cart = await Cart.findOne({ cartId: 'cart-1' })
@@ -78,12 +80,12 @@ describe('idempotency keys', () => {
   })
 
   it('a second, different key creates a second order', async () => {
-    const { user } = await setUpCart()
-    const body = { cartId: 'cart-1', userId: user._id.toString(), customer }
-    await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-3a').send(body)
+    const { accessToken } = await setUpCart()
+    const body = { cartId: 'cart-1', customer }
+    await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-3a').send(body)
     await Cart.updateOne({ cartId: 'cart-1' }, { items: [{ product: (await Product.findOne({ name: 'Mug' }))._id, qty: 1 }] })
 
-    const second = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-3b').send(body)
+    const second = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-3b').send(body)
 
     expect(second).to.have.status(201)
     const count = await Order.countDocuments({})
@@ -91,11 +93,16 @@ describe('idempotency keys', () => {
   })
 
   it('the same key with a different body is rejected with 422', async () => {
-    const { user } = await setUpCart()
-    const body = { cartId: 'cart-1', userId: user._id.toString(), customer }
-    await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-4').send(body)
+    const { accessToken } = await setUpCart()
+    const body = { cartId: 'cart-1', customer }
+    await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${accessToken}`).set('Idempotency-Key', 'key-4').send(body)
 
-    const conflict = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'key-4').send({ ...body, customer: { ...customer, name: 'Bea' } })
+    const conflict = await request
+      .execute(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Idempotency-Key', 'key-4')
+      .send({ ...body, customer: { ...customer, name: 'Bea' } })
 
     expect(conflict).to.have.status(422)
   })
@@ -115,12 +122,19 @@ describe('idempotency keys', () => {
   })
 
   it('scopes keys per user, so the same key string from another user does not collide', async () => {
-    const { user: userA } = await setUpCart('cart-a')
-    const userB = await usersRepo.create({ name: 'Ben', email: 'ben@shop.test', passwordHash: 'irrelevant' })
+    const { accessToken: tokenA } = await setUpCart('cart-a')
+    const passwordHash = await bcrypt.hash('ben-secret-passphrase', 10)
+    await usersRepo.create({ name: 'Ben', email: 'ben@shop.test', passwordHash })
+    const sessionB = await loginAs(app, 'ben@shop.test', 'ben-secret-passphrase')
     await Cart.create({ cartId: 'cart-b', items: [{ product: (await Product.findOne({ name: 'Mug' }))._id, qty: 1 }] })
 
-    const first = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'shared-key').send({ cartId: 'cart-a', userId: userA._id.toString(), customer })
-    const second = await request.execute(app).post('/api/orders').set('Idempotency-Key', 'shared-key').send({ cartId: 'cart-b', userId: userB._id.toString(), customer })
+    const first = await request.execute(app).post('/api/orders').set('Authorization', `Bearer ${tokenA}`).set('Idempotency-Key', 'shared-key').send({ cartId: 'cart-a', customer })
+    const second = await request
+      .execute(app)
+      .post('/api/orders')
+      .set('Authorization', `Bearer ${sessionB.accessToken}`)
+      .set('Idempotency-Key', 'shared-key')
+      .send({ cartId: 'cart-b', customer })
 
     expect(first).to.have.status(201)
     expect(second).to.have.status(201)

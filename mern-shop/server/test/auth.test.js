@@ -15,10 +15,12 @@ describe('POST /api/auth/login', () => {
     const res = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
 
     expect(res).to.have.status(200)
-    expect(res.body.email).to.equal(seedUser.email)
-    expect(res.body.name).to.equal(seedUser.name)
-    expect(res.body._id).to.be.a('string')
-    expect(res.body).to.not.have.property('passwordHash')
+    expect(res.body.user.email).to.equal(seedUser.email)
+    expect(res.body.user.name).to.equal(seedUser.name)
+    expect(res.body.user._id).to.be.a('string')
+    expect(res.body.user).to.not.have.property('passwordHash')
+    expect(res.body.accessToken).to.be.a('string')
+    expect(res.body.refreshToken).to.be.a('string')
   })
 
   it('rejects a wrong password', async () => {

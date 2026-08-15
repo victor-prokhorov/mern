@@ -93,12 +93,12 @@ describe('sessions', () => {
     const loginRes = await login(seedUser.email, seedUser.password)
 
     const rotated = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: loginRes.body.refreshToken })
-    const replay = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: loginRes.body.refreshToken })
     const again = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: rotated.body.refreshToken })
+    const replay = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: loginRes.body.refreshToken })
 
     expect(rotated).to.have.status(200)
-    expect(replay).to.have.status(401)
     expect(again).to.have.status(200)
+    expect(replay).to.have.status(401)
   })
 
   it('reuse detection: replaying a rotated token revokes the family, and the previously valid new token stops working too', async () => {

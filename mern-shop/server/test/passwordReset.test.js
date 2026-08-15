@@ -68,7 +68,7 @@ describe('password reset', () => {
 
     expect(res).to.have.status(200)
     expect(login).to.have.status(200)
-    expect(login.body.email).to.equal(user.email)
+    expect(login.body.user.email).to.equal(user.email)
   })
 
   it('the old password stops working after a reset', async () => {

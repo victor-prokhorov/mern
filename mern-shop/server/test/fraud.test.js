@@ -9,7 +9,7 @@ import Product from '../src/models/product.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_DOMAIN, evaluateSignals } from '../src/fraud/signals.js'
 import { score } from '../src/fraud/score.js'
-import { useTestDb } from './helpers.js'
+import { useTestDb, loginAs } from './helpers.js'
 
 use(chaiHttp)
 
@@ -179,11 +179,13 @@ describe('fraud scoring integration', () => {
     const user = await seedUsers()
     await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
     await setUpCart([{ name: 'Mug', price: 20, qty: 1 }])
+    const session = await loginAs(app, seedUser.email, seedUser.password)
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
 
     expect(res).to.have.status(201)
     expect(res.body.status).to.equal('pending')
@@ -191,13 +193,15 @@ describe('fraud scoring integration', () => {
   })
 
   it('creates a held-for-review order and empties the cart for a new account with a high value order', async () => {
-    const user = await seedUsers()
+    await seedUsers()
     await setUpCart([{ name: 'Poster', price: 250, qty: 1 }])
+    const session = await loginAs(app, seedUser.email, seedUser.password)
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
 
     expect(res).to.have.status(201)
     expect(res.body.status).to.equal('review')
@@ -220,11 +224,13 @@ describe('fraud scoring integration', () => {
     await Order.create(priorOrder)
     await Order.create(priorOrder)
     await setUpCart([{ name: 'Poster', price: 250, qty: 11 }])
+    const session = await loginAs(app, seedUser.email, seedUser.password)
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Demo', email: seedUser.email, address: '1 Main Street' } })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('order could not be completed')
@@ -238,11 +244,13 @@ describe('fraud scoring integration', () => {
     const user = await seedUsers()
     await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
     await setUpCart([{ name: 'Mug', price: 20, qty: 1 }])
+    const session = await loginAs(app, seedUser.email, seedUser.password)
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
 
     expect(res).to.have.status(201)
     expect(res.body.status).to.equal('pending')
@@ -251,13 +259,15 @@ describe('fraud scoring integration', () => {
   it('BLOCKED_DOMAIN fires end to end: denies a checkout whose email domain is on the blocklist', async () => {
     const user = await seedUsers()
     await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
+    const session = await loginAs(app, seedUser.email, seedUser.password)
     await request.execute(app).post('/api/blocks').set('x-admin-token', process.env.ADMIN_TOKEN).send({ type: 'domain', value: 'fraud-signal-domain.test', reason: 'known fraud domain' })
     await setUpCart([{ name: 'Mug', price: 20, qty: 1 }])
 
     const res = await request
       .execute(app)
       .post('/api/orders')
-      .send({ cartId: 'cart-1', userId: user._id.toString(), customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ cartId: 'cart-1', customer: { name: 'Eve', email: 'eve@fraud-signal-domain.test', address: '1 Main Street' } })
 
     expect(res).to.have.status(403)
     expect(res.body.error).to.equal('order could not be completed')
