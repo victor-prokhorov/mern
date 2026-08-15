@@ -4,10 +4,6 @@ export function findById(id) {
   return User.findById(id)
 }
 
-export function findByEmail(email) {
-  return User.findOne({ email })
-}
-
 export function create(doc) {
   return User.create(doc)
 }

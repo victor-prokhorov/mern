@@ -80,6 +80,7 @@ if (process.env.NODE_ENV !== 'test') {
   const actors = await seedActors()
   const movies = await seedMovies(actors)
   const users = await seedUsers()
-  await mongoose.disconnect()
   console.log(`seeded ${actors.length} actors, ${movies.length} movies, ${users.length} users`)
+  users.forEach((user) => console.log(`  ${user.role}: ${user.email} -> ${user._id}`))
+  await mongoose.disconnect()
 }

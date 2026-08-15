@@ -197,4 +197,41 @@ describe('GET /api/recommendations', () => {
     const candidate = res.body.find((entry) => entry.movie.title === 'Thriller Candidate')
     expect(candidate.reasons).to.deep.equal(['LIKED_GENRE:thriller'])
   })
+
+  it('carries a WATCHED_GENRE reason for a genre that was watched but never rated', async () => {
+    const user = await createUser()
+    const watchedSource = await Movie.create({ title: 'Watched Seed', genres: ['horror'], averageRating: 8, releasedAt: new Date('2020-01-01') })
+    await Watch.create({ user: user._id, movie: watchedSource._id })
+    await Movie.create({ title: 'Horror Candidate', genres: ['horror'], averageRating: 7.5, releasedAt: new Date('2020-01-01') })
+
+    const res = await request.execute(app).get('/api/recommendations').set('x-user-id', user._id.toString())
+
+    const candidate = res.body.find((entry) => entry.movie.title === 'Horror Candidate')
+    expect(candidate.reasons).to.deep.equal(['WATCHED_GENRE:horror'])
+  })
+
+  it('carries a DISLIKED_GENRE reason for a genre rated 5 or below', async () => {
+    const user = await createUser()
+    const dislikedSource = await Movie.create({ title: 'Disliked Seed', genres: ['comedy'], averageRating: 8, releasedAt: new Date('2020-01-01') })
+    await Rating.create({ user: user._id, movie: dislikedSource._id, value: 5 })
+    await Movie.create({ title: 'Comedy Candidate', genres: ['comedy'], averageRating: 7.5, releasedAt: new Date('2020-01-01') })
+
+    const res = await request.execute(app).get('/api/recommendations').set('x-user-id', user._id.toString())
+
+    const candidate = res.body.find((entry) => entry.movie.title === 'Comedy Candidate')
+    expect(candidate.reasons).to.deep.equal(['DISLIKED_GENRE:comedy'])
+  })
+
+  it('does not carry a WATCHED_GENRE reason for a genre that was watched but also rated', async () => {
+    const user = await createUser()
+    const watchedAndRated = await Movie.create({ title: 'Watched And Rated', genres: ['drama'], averageRating: 8, releasedAt: new Date('2020-01-01') })
+    await Watch.create({ user: user._id, movie: watchedAndRated._id })
+    await Rating.create({ user: user._id, movie: watchedAndRated._id, value: 8 })
+    await Movie.create({ title: 'Drama Candidate', genres: ['drama'], averageRating: 7.5, releasedAt: new Date('2020-01-01') })
+
+    const res = await request.execute(app).get('/api/recommendations').set('x-user-id', user._id.toString())
+
+    const candidate = res.body.find((entry) => entry.movie.title === 'Drama Candidate')
+    expect(candidate.reasons).to.deep.equal(['LIKED_GENRE:drama'])
+  })
 })

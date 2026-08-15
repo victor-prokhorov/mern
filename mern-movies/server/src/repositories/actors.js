@@ -8,10 +8,6 @@ export function findById(id) {
   return Actor.findById(id)
 }
 
-export function findByIds(ids) {
-  return Actor.find({ _id: { $in: ids } })
-}
-
 export function create(doc) {
   return Actor.create(doc)
 }

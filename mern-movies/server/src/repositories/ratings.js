@@ -11,7 +11,3 @@ export function upsert(userId, movieId, value) {
 export function findByUser(userId) {
   return Rating.find({ user: userId })
 }
-
-export function findByUserAndMovies(userId, movieIds) {
-  return Rating.find({ user: userId, movie: { $in: movieIds } })
-}

@@ -38,7 +38,11 @@ export function rank(candidates, signals = {}) {
   const scored = candidates.map((candidate) => score(candidate, normalized))
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score
-    return String(a.movie._id).localeCompare(String(b.movie._id))
+    const idA = String(a.movie._id)
+    const idB = String(b.movie._id)
+    if (idA < idB) return -1
+    if (idA > idB) return 1
+    return 0
   })
   return scored.slice(0, RESULT_LIMIT)
 }

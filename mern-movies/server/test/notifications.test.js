@@ -187,8 +187,8 @@ describe('GET /api/notifications', () => {
     const actor = await Actor.create({ name: 'Keanu Reeves' })
     const movieOne = new mongoose.Types.ObjectId()
     const movieTwo = new mongoose.Types.ObjectId()
-    const read = await Notification.create({ user: user._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieOne, readAt: new Date() })
-    const unread = await Notification.create({ user: user._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieTwo })
+    const unread = await Notification.create({ user: user._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieOne })
+    const read = await Notification.create({ user: user._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieTwo, readAt: new Date() })
 
     const res = await request.execute(app).get('/api/notifications').set('x-user-id', user._id.toString())
 
@@ -213,5 +213,18 @@ describe('POST /api/notifications/:id/read', () => {
     expect(res.body.readAt).to.not.equal(null)
     const stored = await Notification.findById(notification._id)
     expect(stored.readAt).to.not.equal(null)
+  })
+
+  it('rejects marking another user\'s notification as read', async () => {
+    const owner = await createUser()
+    const intruder = await createUser()
+    const actor = await Actor.create({ name: 'Keanu Reeves' })
+    const notification = await Notification.create({ user: owner._id, type: 'actor_in_new_movie', actor: actor._id, movie: new mongoose.Types.ObjectId() })
+
+    const res = await request.execute(app).post(`/api/notifications/${notification._id}/read`).set('x-user-id', intruder._id.toString())
+
+    expect(res).to.have.status(404)
+    const stored = await Notification.findById(notification._id)
+    expect(stored.readAt).to.equal(null)
   })
 })
