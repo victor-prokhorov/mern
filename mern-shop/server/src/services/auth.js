@@ -34,6 +34,10 @@ export async function refresh(rawRefreshToken, hooks = {}) {
     if (hooks.afterConsume) await hooks.afterConsume(consumed)
     const { accessToken, refreshToken, tokenHash: newTokenHash } = await issueSession(consumed.user, consumed.familyId)
     await sessions.markReplacedBy(consumed._id, newTokenHash)
+    if (await sessions.isFamilyRevoked(consumed.familyId)) {
+      await sessions.revokeFamily(consumed.familyId, now)
+      throw new UnauthorizedError('invalid refresh token')
+    }
     return { accessToken, refreshToken }
   }
   const existing = await sessions.findByTokenHash(tokenHash)
