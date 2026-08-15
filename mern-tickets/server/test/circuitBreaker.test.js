@@ -182,6 +182,17 @@ describe('circuit breaker', () => {
     expect(res.headers['Retry-After']).to.equal(String(err.retryAfter))
   })
 
+  it('does not set Retry-After to the literal string undefined for a 503 without one', async () => {
+    const err = new Error('service unavailable')
+    err.status = 503
+    const res = fakeResponse()
+
+    errorHandler(err, {}, res, () => {})
+
+    expect(res.statusCode).to.equal(503)
+    expect(res.headers['Retry-After']).to.equal(undefined)
+  })
+
   it('does not wedge open forever when a half-open trial errors in a way isFailure excludes', async () => {
     let currentTime = 0
     const breaker = createCircuitBreaker({ now: () => currentTime, minimumThroughput: 1, failureRateThreshold: 0.5, openMs: 5000, isFailure: (err) => err.status !== 400 })
