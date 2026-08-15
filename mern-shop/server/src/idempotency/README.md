@@ -45,13 +45,21 @@ A mechanism that lets a client safely retry `POST /api/orders` after a timeout o
 
 ## Try it
 
-With the dev server running (`npm run dev`), seed data loaded, and a valid user id and cart in place, place an order with an idempotency key:
+With the dev server running (`npm run dev`) and seed data loaded, log in and add something to a cart first — identity now comes from the access token, per `../session/README.md`, not from anything in the order body:
+
+```bash
+curl -s -X POST http://localhost:5000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"demo@shop.test","password":"demo1234"}'
+curl -s -X POST http://localhost:5000/api/cart/cart-1/items -H 'Content-Type: application/json' -d '{"productId":"<a seeded product id>","qty":1}'
+```
+
+Place an order with an idempotency key, using the `accessToken` from the login response:
 
 ```bash
 curl -i -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <accessToken>' \
   -H 'Idempotency-Key: demo-key-1' \
-  -d '{"cartId":"<a cart id with items>","userId":"<a seeded user id>","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
+  -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
 ```
 
 Note the `_id` in the response, then repeat the exact same request:
@@ -59,8 +67,9 @@ Note the `_id` in the response, then repeat the exact same request:
 ```bash
 curl -i -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <accessToken>' \
   -H 'Idempotency-Key: demo-key-1' \
-  -d '{"cartId":"<the same cart id>","userId":"<the same user id>","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
+  -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
 ```
 
 The second response carries `Idempotent-Replay: true` and the identical `_id` — no second order was created. Now send the same key with a different body:
@@ -68,15 +77,16 @@ The second response carries `Idempotent-Replay: true` and the identical `_id` �
 ```bash
 curl -i -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <accessToken>' \
   -H 'Idempotency-Key: demo-key-1' \
-  -d '{"cartId":"<the same cart id>","userId":"<the same user id>","customer":{"name":"Bea","email":"bea@shop.test","address":"1 Main Street"}}'
+  -d '{"cartId":"cart-1","customer":{"name":"Bea","email":"bea@shop.test","address":"1 Main Street"}}'
 ```
 
 That returns `422`. Finally, fire two identical requests with a fresh key at the same instant to see the in-flight `409`:
 
 ```bash
-curl -i -X POST http://localhost:5000/api/orders -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-key-2' -d '{"cartId":"<cart id>","userId":"<user id>","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}' & \
-curl -i -X POST http://localhost:5000/api/orders -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-key-2' -d '{"cartId":"<cart id>","userId":"<user id>","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
+curl -i -X POST http://localhost:5000/api/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <accessToken>" -H 'Idempotency-Key: demo-key-2' -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}' & \
+curl -i -X POST http://localhost:5000/api/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <accessToken>" -H 'Idempotency-Key: demo-key-2' -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"ada@shop.test","address":"1 Main Street"}}'
 ```
 
 One prints `201`, the other `409` with `Retry-After: 1` — whichever wins the race with the database.
