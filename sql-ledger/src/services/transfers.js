@@ -2,6 +2,7 @@ import { pool, withTransaction } from '../db.js'
 import * as transfersRepo from '../repositories/transfers.js'
 import * as entriesRepo from '../repositories/entries.js'
 import * as accountsRepo from '../repositories/accounts.js'
+import * as outboxRepo from '../repositories/outbox.js'
 import { encodeCursor, decodeCursor } from '../pagination/cursor.js'
 import { BadRequestError, ConflictError } from '../middleware/error.js'
 
@@ -30,6 +31,12 @@ export async function createTransfer({ reference, fromAccountId, toAccountId, am
       await entriesRepo.create(client, { transferId: transfer.id, accountId: toAccountId, amountMinor })
       await accountsRepo.adjustBalance(client, fromAccountId, -amountMinor)
       await accountsRepo.adjustBalance(client, toAccountId, amountMinor)
+      await outboxRepo.create(client, {
+        aggregate: 'transfer',
+        aggregateId: transfer.id,
+        type: 'transfer.completed',
+        payload: { transferId: transfer.id, reference: transfer.reference, fromAccountId, toAccountId, amountMinor }
+      })
       return transfer
     })
   } catch (err) {
