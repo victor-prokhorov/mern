@@ -92,9 +92,9 @@ Now the interesting one, which shows the `collapseRepeats` problem rather than t
 
 ```
 curl -s -X POST http://localhost:5001/api/tickets -H 'Content-Type: application/json' \
-  -H 'x-user-id: <rae id>' -d '{"title":"t","body":"Password reset link is broken.","priority":"normal"}'
+  -H 'x-user-id: <rae id>' -d '{"title":"t","body":"The password reset link is broken.","priority":"normal"}'
 ```
-→ 201 with `moderation` `{"flagged":true}`. Nothing in that sentence is objectionable: `ass` normalizes to `as`, `password` normalizes to `pasword`, and the substring matches. Only five ticket creations per user are allowed before the throttle steps in, so run these with a fresh seed or a different user.
+→ 201 with `moderation` `{"flagged":true}`. Nothing in that sentence is objectionable: `ass` normalizes to `as`, `password` normalizes to `pasword`, and the substring matches. Two practical notes for running these: only five ticket creations per user are allowed before the throttle steps in (and a `block` rejection still spends a token, because the throttle runs first), and the wording above deliberately differs from the seed's `Password reset link is broken.`, which the duplicate-content handler would reject with a 400 instead.
 
 The pure functions are easier to poke at directly than through HTTP:
 
