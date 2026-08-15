@@ -5,6 +5,8 @@ import * as comments from '../repositories/comments.js'
 import * as users from '../repositories/users.js'
 import { BadRequestError, NotFoundError } from '../middleware/error.js'
 import { authorize } from '../policy/engine.js'
+import * as blockedTerms from '../repositories/blockedTerms.js'
+import { scan, ALLOWLIST } from '../moderation/keywords.js'
 
 export const TRANSITIONS = {
   open: ['triaged'],
@@ -28,10 +30,18 @@ async function requireTicket(id) {
   return ticket
 }
 
+async function moderate(text) {
+  const terms = await blockedTerms.find()
+  const matches = scan(text, terms, ALLOWLIST)
+  if (matches.some((term) => term.severity === 'block')) throw new BadRequestError('content rejected')
+  return matches.map((term) => term.term)
+}
+
 export async function create({ subject, title, body, priority }) {
   authorize({ subject, action: 'ticket:create', resource: null, context: {} })
   if (!title || !body) throw new BadRequestError('title and body are required')
   if (!SLA_HOURS[priority]) throw new BadRequestError('invalid priority')
+  const matchedTerms = await moderate(`${title} ${body}`)
   const reporter = await users.findById(subject.id)
   if (!reporter) throw new BadRequestError('invalid reporter')
   const ticket = await tickets.create({
@@ -41,7 +51,8 @@ export async function create({ subject, title, body, priority }) {
     status: 'open',
     reporter: reporter._id,
     teamId: reporter.teamId,
-    dueAt: dueAtFor(priority)
+    dueAt: dueAtFor(priority),
+    moderation: { flagged: matchedTerms.length > 0, terms: matchedTerms }
   })
   await ticketEvents.create({ ticket: ticket._id, actor: reporter._id, type: 'created', from: null, to: 'open' })
   return ticket
@@ -96,7 +107,8 @@ export async function addComment({ subject, id, body }) {
   const ticket = await requireTicket(id)
   authorize({ subject, action: 'ticket:comment', resource: ticket, context: {} })
   if (!body) throw new BadRequestError('body is required')
-  const comment = await comments.create({ ticket: ticket._id, author: subject.id, body })
+  const matchedTerms = await moderate(body)
+  const comment = await comments.create({ ticket: ticket._id, author: subject.id, body, moderation: { flagged: matchedTerms.length > 0, terms: matchedTerms } })
   await ticketEvents.create({ ticket: ticket._id, actor: subject.id, type: 'commented', from: null, to: null })
   return comment
 }
