@@ -215,26 +215,26 @@ the reason the popularity-amplification feedback loop described in
 npm run seed
 npm start
 
-curl http://localhost:5001/api/movies
-curl "http://localhost:5001/api/movies?genre=scifi"
-curl http://localhost:5001/api/actors
+curl http://localhost:5003/api/movies
+curl "http://localhost:5003/api/movies?genre=scifi"
+curl http://localhost:5003/api/actors
 
-curl -X POST http://localhost:5001/api/actors \
+curl -X POST http://localhost:5003/api/actors \
   -H 'Content-Type: application/json' \
   -H "x-user-id: <admin user id from the seed output>" \
   -d '{"name":"Idris Elba"}'
 
-curl -X POST http://localhost:5001/api/movies \
+curl -X POST http://localhost:5003/api/movies \
   -H 'Content-Type: application/json' \
   -H "x-user-id: <admin user id from the seed output>" \
   -d '{"title":"New Release","genres":["action"],"cast":["<actor id from GET /api/actors>"],"averageRating":8,"releasedAt":"2024-01-01"}'
 
-curl -X POST http://localhost:5001/api/ratings \
+curl -X POST http://localhost:5003/api/ratings \
   -H 'Content-Type: application/json' \
   -H "x-user-id: <user id from the seed output>" \
   -d '{"movieId":"<movie id from GET /api/movies>","value":8}'
 
-curl -X POST http://localhost:5001/api/watches \
+curl -X POST http://localhost:5003/api/watches \
   -H 'Content-Type: application/json' \
   -H "x-user-id: <user id from the seed output>" \
   -d '{"movieId":"<movie id from GET /api/movies>"}'

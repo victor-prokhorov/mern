@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { login, saveUser } from '../api.js'
+import { login, saveSession } from '../api.js'
 
 export default function Login({ setPage, onSignedIn, notice }) {
   const [email, setEmail] = useState('')
@@ -8,9 +8,9 @@ export default function Login({ setPage, onSignedIn, notice }) {
   async function submit(event) {
     event.preventDefault()
     try {
-      const user = await login(email, password)
-      saveUser(user)
-      onSignedIn(user)
+      const session = await login(email, password)
+      saveSession(session)
+      onSignedIn(session.user)
       setPage({ name: 'products' })
     } catch (err) {
       setError(err.message)

@@ -1,12 +1,22 @@
 async function request(path, options) {
   const res = await fetch(`/api${path}`, options)
+  if (res.status === 401) {
+    clearSession()
+    window.dispatchEvent(new CustomEvent('shop:session-expired'))
+    throw new Error('session expired, please log in again')
+  }
   const body = await res.json()
   if (!res.ok) throw new Error(body.error || 'request failed')
   return body
 }
 
-function send(method, body) {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+function authHeader() {
+  const accessToken = loadAccessToken()
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+}
+
+function send(method, body, { auth = false } = {}) {
+  return { method, headers: { 'Content-Type': 'application/json', ...(auth ? authHeader() : {}) }, body: JSON.stringify(body) }
 }
 
 export function getCartId() {
@@ -22,12 +32,20 @@ export function loadUser() {
   return stored ? JSON.parse(stored) : null
 }
 
-export function saveUser(user) {
-  localStorage.setItem('user', JSON.stringify(user))
+export function loadAccessToken() {
+  return localStorage.getItem('accessToken')
 }
 
-export function clearUser() {
+export function saveSession({ user, accessToken, refreshToken }) {
+  localStorage.setItem('user', JSON.stringify(user))
+  localStorage.setItem('accessToken', accessToken)
+  localStorage.setItem('refreshToken', refreshToken)
+}
+
+export function clearSession() {
   localStorage.removeItem('user')
+  localStorage.removeItem('accessToken')
+  localStorage.removeItem('refreshToken')
 }
 
 export function listProducts() {
@@ -58,8 +76,8 @@ export function removeFromCart(productId) {
   return request(`/cart/${getCartId()}/items/${productId}`, { method: 'DELETE' })
 }
 
-export function placeOrder(userId, customer) {
-  return request('/orders', send('POST', { cartId: getCartId(), userId, customer }))
+export function placeOrder(customer) {
+  return request('/orders', send('POST', { cartId: getCartId(), customer }, { auth: true }))
 }
 
 export function getOrder(id) {

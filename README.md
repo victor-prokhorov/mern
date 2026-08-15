@@ -70,21 +70,22 @@ npm run seed
 npm run dev
 ```
 
-Two things `.env.example` does not tell you:
+One thing `.env.example` alone does not tell you:
 
 - **`mern-shop` will not start without `JWT_SECRET`.** `src/session/tokens.js`
-  throws at import rather than fall back to a hardcoded signing key, so
-  `npm run dev` after `cp .env.example .env` fails with
-  `JWT_SECRET environment variable must be set`. Use
-  `JWT_SECRET=dev-secret npm run dev`. The blocklist guide additionally needs
+  throws at import rather than fall back to a hardcoded signing key.
+  `mern-shop/server/.env.example` ships a `JWT_SECRET` placeholder so
+  `cp .env.example .env` followed by `npm run dev` works verbatim, but the
+  placeholder is exactly that — replace it with a real secret before this
+  app ever runs anywhere but a laptop. The blocklist guide additionally needs
   `ADMIN_TOKEN` and the password-reset guide needs `EXPOSE_RESET_TOKEN=1`; see
   [mern-shop/README.md](mern-shop/README.md) for the table.
-- **`mern-tickets` and `mern-movies` both default to port 5001.** Whichever
-  starts second dies with `EADDRINUSE`. Run one of them with `PORT=5002` — or,
-  since `sql-ledger` owns 5002, pick anything free.
 
-Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5001,
-`sql-ledger` 5002, `mern-shop`'s Vite client 5173.
+Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
+`sql-ledger` 5002, `mern-shop`'s Vite client 5173. Each app's `.env.example`
+now ships its own distinct default, so any two (or all four) can run side by
+side without an `EADDRINUSE` — which several guides' "Try it" sections
+already assumed when they point at each other.
 
 `mern-shop` also has a client:
 
@@ -115,7 +116,7 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-352 tests across the four apps (122 shop, 134 tickets, 55 movies, 41 ledger).
+354 tests across the four apps (124 shop, 134 tickets, 55 movies, 41 ledger).
 The MERN suites need a reachable MongoDB; `sql-ledger` needs a reachable
 Postgres and creates its own `ledger_test` database on first run.
 

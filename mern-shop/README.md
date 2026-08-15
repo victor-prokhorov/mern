@@ -25,19 +25,21 @@ cd server
 npm install
 cp .env.example .env
 npm run seed
-JWT_SECRET=dev-secret npm run dev
+npm run dev
 ```
 
 API on `http://localhost:5000`.
 
 ### Environment
 
-`.env.example` covers `PORT` and `MONGO_URI` only. Three more variables matter,
-and the first one is not optional:
+`.env.example` covers `PORT`, `MONGO_URI`, and a placeholder `JWT_SECRET` —
+the placeholder is enough to get the server running locally, but replace it
+with a real, random secret before this app runs anywhere but a laptop. Two
+more variables matter beyond what `.env.example` ships:
 
 | Variable | Needed for | If unset |
 |---|---|---|
-| `JWT_SECRET` | signing and verifying access tokens | **the server refuses to start** — `src/session/tokens.js` throws at import rather than fall back to a hardcoded secret |
+| `JWT_SECRET` | signing and verifying access tokens | **the server refuses to start** — `src/session/tokens.js` throws at import rather than fall back to a hardcoded secret. `.env.example` ships a placeholder so this is covered by default. |
 | `ADMIN_TOKEN` | the `POST`/`DELETE /api/blocks` admin surface | every admin request gets `401`, including one sending the right token |
 | `EXPOSE_RESET_TOKEN=1` | reading a password-reset token back out of the API response, since there is no mail sender | the reset flow works but there is no way to obtain a token by hand |
 
@@ -53,23 +55,22 @@ npm run dev
 
 Client on `http://localhost:5173`, proxying `/api` to the server on `:5000`.
 
-**The client's login and checkout are currently broken, and it is a code bug,
-not a setup problem.** Browsing, the cart, and product pages work. Checkout does
-not. Two changes landed on the server without being propagated to
-`client/src/`:
-
-- `POST /api/auth/login` now returns `{ user, accessToken, refreshToken }`
-  rather than the user document. `pages/Login.jsx` stores that whole envelope
-  as if it were the user, so `user._id` is `undefined` everywhere afterwards,
-  and both tokens are discarded.
-- `POST /api/orders` now requires `Authorization: Bearer <accessToken>` and
-  takes identity from the token
-  ([`server/src/session`](server/src/session/README.md)). `api.js`'s
-  `placeOrder` still sends `userId` in the body and no header, so it gets
-  `401 authentication required`.
-
-The API itself is fine — every curl in the server-side guides works. Use those
-until the client is caught up.
+**Login and checkout used to be broken here, and it was a code bug, not a
+setup problem.** Two changes had landed on the server without being
+propagated to `client/src/`: `POST /api/auth/login` started returning
+`{ user, accessToken, refreshToken }` rather than the user document, and
+`pages/Login.jsx` kept storing that whole envelope as if it were the user, so
+`user._id` was `undefined` everywhere afterwards and both tokens were
+discarded; separately, `POST /api/orders` started requiring
+`Authorization: Bearer <accessToken>` and taking identity from the token
+([`server/src/session`](server/src/session/README.md)), while `api.js`'s
+`placeOrder` kept sending `userId` in the body with no header, so it got
+`401 authentication required`. Both are fixed now: `api.js` stores the user
+and the two tokens under separate keys (`saveSession`/`loadUser`/
+`loadAccessToken`), `placeOrder` sends the access token as a bearer header
+and no longer sends `userId`, and a 401 from any authenticated call clears
+the stored session and bounces to the login page with a notice, rather than
+leaving the UI in a half-logged-in state.
 
 ## Topics
 

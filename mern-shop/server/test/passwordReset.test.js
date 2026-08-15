@@ -1,10 +1,12 @@
 import crypto from 'node:crypto'
+import express from 'express'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import User from '../src/models/user.js'
 import PasswordReset from '../src/models/passwordReset.js'
 import { seedUser, seedUsers } from '../src/seed.js'
+import { requireAuth } from '../src/middleware/auth.js'
 import { useTestDb } from './helpers.js'
 
 use(chaiHttp)
@@ -16,6 +18,14 @@ function hashToken(rawToken) {
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key]
   else process.env[key] = value
+}
+
+function buildProtectedApp() {
+  const built = express()
+  built.use(express.json())
+  built.get('/whoami', requireAuth, (req, res) => res.json({ userId: req.userId }))
+  built.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }))
+  return built
 }
 
 describe('password reset', () => {
@@ -169,5 +179,28 @@ describe('password reset', () => {
 
     expect(res).to.have.status(200)
     expect(res.body.message).to.equal('password has been reset')
+  })
+
+  it('revokes the old refresh token immediately when the password is reset', async () => {
+    await seedUsers()
+    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+
+    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
+    const refreshed = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: login.body.refreshToken })
+
+    expect(refreshed).to.have.status(401)
+  })
+
+  it('does not immediately invalidate the old access token, since it is a stateless JWT that only dies on its own short expiry', async () => {
+    await seedUsers()
+    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+    await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
+    const protectedApp = buildProtectedApp()
+
+    const whoami = await request.execute(protectedApp).get('/whoami').set('Authorization', `Bearer ${login.body.accessToken}`)
+
+    expect(whoami).to.have.status(200)
   })
 })
