@@ -37,6 +37,7 @@ toy skips, and further reading.
 | Zero-downtime migrations (expand-contract) | [sql-ledger/src/migrations](sql-ledger/src/migrations/README.md) |
 | Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
 | Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
+| Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 ## Requirements
 
@@ -77,6 +78,22 @@ npm run test:ci # same, plus JUnit XML in test-results/
 
 252 tests across the three apps (85 shop, 112 tickets, 55 movies). They need a
 reachable MongoDB.
+
+## Mutation testing
+
+`tools/mutation` is a hand-rolled mutation testing runner used to audit the
+test suites above — it mutates one line of source at a time, reruns the app's
+real test suite, and records whether the suite noticed. A green suite with a
+100% coverage report can still be at 0% mutation score if nothing checks the
+behaviour that changed, which is exactly the failure mode it exists to catch.
+
+```bash
+cd tools/mutation
+node cli.js --app mern-shop --files src/middleware/auth.js --max 20 --seed demo
+```
+
+See [tools/mutation/README.md](tools/mutation/README.md) for how it works and
+what running it against all four apps found.
 
 ## House rules
 
