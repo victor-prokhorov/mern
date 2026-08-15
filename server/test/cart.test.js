@@ -101,4 +101,15 @@ describe('cart', () => {
 
     expect(res.body.items).to.deep.equal([])
   })
+
+  it('drops a cart line whose product was deleted', async () => {
+    const product = await Product.create({ name: 'Mug', price: 12, stock: 3 })
+    await request.execute(app).post('/api/cart/cart-1/items').send({ productId: product._id.toString(), qty: 2 })
+    await Product.deleteOne({ _id: product._id })
+
+    const res = await request.execute(app).get('/api/cart/cart-1')
+
+    expect(res).to.have.status(200)
+    expect(res.body.items).to.deep.equal([])
+  })
 })
