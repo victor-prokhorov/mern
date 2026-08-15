@@ -40,13 +40,17 @@ export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_M
       return
     }
     const originalJson = res.json.bind(res)
-    res.json = (body) => {
+    res.json = async (body) => {
       const status = res.statusCode
       const replayableBody = JSON.parse(JSON.stringify(body))
-      if (status >= 500) {
-        store.release(claimed._id).catch(() => {})
-      } else {
-        store.markCompleted(claimed._id, { status, body: replayableBody }).catch(() => {})
+      try {
+        if (status >= 500) {
+          await store.release(claimed._id)
+        } else {
+          await store.markCompleted(claimed._id, { status, body: replayableBody })
+        }
+      } catch (err) {
+        if (status < 500) await store.release(claimed._id).catch(() => {})
       }
       return originalJson(body)
     }
