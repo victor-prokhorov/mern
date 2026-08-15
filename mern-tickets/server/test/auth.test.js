@@ -19,6 +19,7 @@ describe('POST /api/auth/login', () => {
     expect(res.body.role).to.equal('admin')
     expect(res.body._id).to.be.a('string')
     expect(res.body).to.not.have.property('passwordHash')
+    expect(res.text).to.not.include('passwordHash')
   })
 
   it('rejects a wrong password', async () => {
