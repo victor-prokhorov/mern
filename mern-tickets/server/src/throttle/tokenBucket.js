@@ -41,7 +41,7 @@ export async function consume(userId, action, now = new Date()) {
     )
     if (updated) return { allowed: true, tokens: updated.tokens }
   }
-  throw new Error('could not consume token bucket after retries')
+  return { allowed: false, tokens: 0, retryAfter: 1 }
 }
 
 export async function throttle(userId, action) {
