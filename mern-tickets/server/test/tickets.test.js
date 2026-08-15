@@ -189,3 +189,59 @@ describe('tickets', () => {
     expect(events).to.have.length(1)
   })
 })
+
+describe('list scoping', () => {
+  useTestDb()
+
+  it('never shows a reporter another reporter\'s tickets, even when every filter matches', async () => {
+    const [, , , rae, sam] = await seedUsers()
+    await createTicket(sam._id.toString(), { title: 'sam ticket', body: 'sam body', priority: 'high' })
+    const own = await createTicket(rae._id.toString(), { title: 'rae ticket', body: 'rae body', priority: 'high' })
+
+    const unfiltered = await request.execute(app).get('/api/tickets').set('x-user-id', rae._id.toString())
+    const filtered = await request.execute(app).get('/api/tickets').set('x-user-id', rae._id.toString()).query({ status: 'open', priority: 'high' })
+
+    expect(unfiltered.body.map((t) => t._id)).to.deep.equal([own.body._id])
+    expect(filtered.body.map((t) => t._id)).to.deep.equal([own.body._id])
+  })
+
+  it('never shows an agent another team\'s tickets, even when every filter matches', async () => {
+    const [, gale, , rae, , lee] = await seedUsers()
+    await createTicket(lee._id.toString(), { title: 'lee ticket', body: 'lee body', priority: 'high' })
+    const inTeam = await createTicket(rae._id.toString(), { title: 'rae ticket', body: 'rae body', priority: 'high' })
+
+    const unfiltered = await request.execute(app).get('/api/tickets').set('x-user-id', gale._id.toString())
+    const filtered = await request.execute(app).get('/api/tickets').set('x-user-id', gale._id.toString()).query({ status: 'open', priority: 'high' })
+
+    expect(unfiltered.body.map((t) => t._id)).to.deep.equal([inTeam.body._id])
+    expect(filtered.body.map((t) => t._id)).to.deep.equal([inTeam.body._id])
+  })
+
+  it('does not let a reporter widen scope by passing unsupported query parameters', async () => {
+    const [, , , rae, sam] = await seedUsers()
+    await createTicket(sam._id.toString(), { title: 'sam ticket', body: 'sam body' })
+    const own = await createTicket(rae._id.toString(), { title: 'rae ticket', body: 'rae body' })
+
+    const res = await request
+      .execute(app)
+      .get('/api/tickets')
+      .set('x-user-id', rae._id.toString())
+      .query({ reporter: sam._id.toString(), teamId: 'team-b' })
+
+    expect(res.body.map((t) => t._id)).to.deep.equal([own.body._id])
+  })
+
+  it('does not let an agent widen scope by passing unsupported query parameters', async () => {
+    const [, gale, , rae, , lee] = await seedUsers()
+    await createTicket(lee._id.toString(), { title: 'lee ticket', body: 'lee body' })
+    const inTeam = await createTicket(rae._id.toString(), { title: 'rae ticket', body: 'rae body' })
+
+    const res = await request
+      .execute(app)
+      .get('/api/tickets')
+      .set('x-user-id', gale._id.toString())
+      .query({ teamId: 'team-b', reporter: lee._id.toString() })
+
+    expect(res.body.map((t) => t._id)).to.deep.equal([inTeam.body._id])
+  })
+})
