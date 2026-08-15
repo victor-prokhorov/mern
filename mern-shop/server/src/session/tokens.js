@@ -3,7 +3,14 @@ import jwt from 'jsonwebtoken'
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-insecure-secret-change-me'
+
+function resolveJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+  if (process.env.NODE_ENV === 'test') return 'test-only-insecure-fallback-secret'
+  throw new Error('JWT_SECRET environment variable must be set outside the test environment')
+}
+
+const JWT_SECRET = resolveJwtSecret()
 
 export function signAccessToken({ sub, sid }, { expiresInSeconds = ACCESS_TOKEN_TTL_SECONDS } = {}) {
   return jwt.sign({ sub, sid }, JWT_SECRET, { algorithm: 'HS256', expiresIn: expiresInSeconds })
