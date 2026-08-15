@@ -379,7 +379,6 @@ describe('idempotency keys', () => {
       .set('Idempotency-Key', 'fence-key')
       .set('x-test-delay', '20')
       .send({ a: 1 })
-
     const [original, reclaimer] = await Promise.all([originalPromise, reclaimerPromise])
     const third = await request.execute(built).post('/orders').set('x-test-user', testUserFencing).set('Idempotency-Key', 'fence-key').send({ a: 1 })
 
@@ -389,5 +388,28 @@ describe('idempotency keys', () => {
     expect(third.headers['idempotent-replay']).to.equal('true')
     expect(third.body.execution).to.equal(2)
     expect(counterRef.count).to.equal(2)
+  })
+
+  it('claim() sets epoch explicitly, so a fresh claim is never fenced with undefined', async () => {
+    const claimed = await idempotencyKeysRepo.claim({ key: 'epoch-key', user: testUserFencing, requestFingerprint: 'fp', expiresAt: new Date(Date.now() + 60000) })
+
+    expect(claimed.epoch).to.equal(1)
+  })
+
+  it('a document written before the epoch field existed has none, and an undefined epoch matches it, deleting it unconditionally', async () => {
+    const legacy = await IdempotencyKey.collection.insertOne({
+      key: 'legacy-key',
+      user: testUserFencing,
+      requestFingerprint: 'fp',
+      status: 'in_progress',
+      response: null,
+      createdAt: new Date(),
+      claimedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60000)
+    })
+
+    const result = await idempotencyKeysRepo.release(legacy.insertedId, undefined)
+
+    expect(result.deletedCount).to.equal(1)
   })
 })

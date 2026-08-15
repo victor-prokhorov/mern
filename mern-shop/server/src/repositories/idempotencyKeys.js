@@ -1,7 +1,7 @@
 import IdempotencyKey from '../models/idempotencyKey.js'
 
 export function claim({ key, user, requestFingerprint, expiresAt }) {
-  return IdempotencyKey.create({ key, user, requestFingerprint, expiresAt })
+  return IdempotencyKey.create({ key, user, requestFingerprint, expiresAt, epoch: 1 })
 }
 
 export function findByKeyAndUser(key, user) {
