@@ -44,7 +44,7 @@ npm test        # bootstraps and truncates its own ledger_test database on every
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-26 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
+35 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
 
 ## Topics and their READMEs
 
@@ -60,6 +60,6 @@ npm run test:ci # same, plus JUnit XML in test-results/
 Same constraints as the rest of this repo, adapted to SQL:
 
 - A closed dependency list: `pg`, `dotenv`, `express`, `express-async-errors`, `cors`, plus `chai`/`chai-http`/`mocha`/`mocha-junit-reporter`/`mocha-multi-reporters`/`cross-env` for testing. No ORM, no query builder, no migration library — the migration runner in `src/migrations/runner.js` is hand-rolled on purpose.
-- Parameterised queries only. `test/ledger.test.js` proves a hostile `reference` value (`x'); DROP TABLE transfers; --`) is stored as plain data, not executed.
+- Parameterised queries only. `test/ledger.test.js` proves a hostile `reference` value (`x'); DROP TABLE transfers; --`) is stored as plain data, not executed. The one unavoidable exception is `test/helpers.js:16`'s `` CREATE DATABASE "${dbName}" `` — Postgres has no way to parameterise a database name in DDL, and `dbName` here comes only from this app's own trusted `DATABASE_URL`, never from a request.
 - No comments in source or tests. No blank lines inside function bodies; test bodies use setup / blank / run / blank / assert.
 - ESM, `.js` extensions on relative imports.
