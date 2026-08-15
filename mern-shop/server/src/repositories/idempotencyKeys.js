@@ -15,3 +15,11 @@ export function markCompleted(id, response) {
 export function release(id) {
   return IdempotencyKey.deleteOne({ _id: id })
 }
+
+export function reclaimStale({ key, user, requestFingerprint, expiresAt, staleBefore }) {
+  return IdempotencyKey.findOneAndUpdate(
+    { key, user, status: 'in_progress', requestFingerprint, claimedAt: { $lt: staleBefore } },
+    { $set: { expiresAt, claimedAt: new Date() } },
+    { returnDocument: 'after' }
+  )
+}

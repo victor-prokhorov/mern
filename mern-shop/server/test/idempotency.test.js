@@ -6,6 +6,7 @@ import app from '../src/app.js'
 import Order from '../src/models/order.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
+import IdempotencyKey from '../src/models/idempotencyKey.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { idempotency } from '../src/middleware/idempotency.js'
 import * as idempotencyKeysRepo from '../src/repositories/idempotencyKeys.js'
@@ -21,6 +22,9 @@ const testUser4xx = '64b7f0f0f0f0f0f0f0f0f0f3'
 const testUserSlowComplete = '64b7f0f0f0f0f0f0f0f0f0f4'
 const testUserSlowRelease = '64b7f0f0f0f0f0f0f0f0f0f5'
 const testUserClaimRace = '64b7f0f0f0f0f0f0f0f0f0f6'
+const testUserStale = '64b7f0f0f0f0f0f0f0f0f0f7'
+const testUserLeaseFresh = '64b7f0f0f0f0f0f0f0f0f0f8'
+const testUserLogging = '64b7f0f0f0f0f0f0f0f0f0f9'
 
 const customer = { name: 'Ada', email: 'ada@shop.test', address: '1 Main Street' }
 
@@ -47,6 +51,24 @@ function buildFailingIdempotentApp(status) {
   built.use(express.json())
   built.use('/orders', idempotency({ userIdFrom: (req) => req.get('x-test-user') }), (req, res) => {
     res.status(status).json({ error: 'boom' })
+  })
+  return built
+}
+
+function buildLeasedApp(leaseMs, delayMs) {
+  const built = express()
+  built.use(express.json())
+  built.use('/orders', idempotency({ userIdFrom: (req) => req.get('x-test-user'), leaseMs }), (req, res) => {
+    setTimeout(() => res.status(201).json({ ok: true }), delayMs)
+  })
+  return built
+}
+
+function buildAppWithStoreAndStatus(store, status) {
+  const built = express()
+  built.use(express.json())
+  built.use('/orders', idempotency({ store, userIdFrom: (req) => req.get('x-test-user') }), (req, res) => {
+    res.status(status).json({ ok: true })
   })
   return built
 }
@@ -253,5 +275,68 @@ describe('idempotency keys', () => {
     expect(first).to.exist
     expect(secondThrew).to.equal(true)
     expect(secondCode).to.equal(11000)
+  })
+
+  it('a stale in-progress claim is reclaimed once its lease expires, so a crashed request cannot wedge the key', async () => {
+    const leased = buildLeasedApp(50, 0)
+    const body = { a: 1 }
+    const fingerprint = computeFingerprint(body)
+    await IdempotencyKey.create({
+      key: 'stale-key',
+      user: testUserStale,
+      requestFingerprint: fingerprint,
+      status: 'in_progress',
+      expiresAt: new Date(Date.now() + 60000),
+      claimedAt: new Date(Date.now() - 1000)
+    })
+
+    const res = await request.execute(leased).post('/orders').set('x-test-user', testUserStale).set('Idempotency-Key', 'stale-key').send(body)
+
+    expect(res).to.have.status(201)
+  })
+
+  it('a fresh in-progress claim inside the lease window still 409s instead of being reclaimed', async () => {
+    const leased = buildLeasedApp(5000, 80)
+
+    const [first, second] = await Promise.all([
+      request.execute(leased).post('/orders').set('x-test-user', testUserLeaseFresh).set('Idempotency-Key', 'fresh-lease-key').send({ a: 1 }),
+      request.execute(leased).post('/orders').set('x-test-user', testUserLeaseFresh).set('Idempotency-Key', 'fresh-lease-key').send({ a: 1 })
+    ])
+
+    const statuses = [first.status, second.status].sort()
+    expect(statuses).to.deep.equal([201, 409])
+  })
+
+  it('logs an error with the key and user when persisting the claim outcome fails, on both the completed and released branches', async () => {
+    const failingStore = {
+      claim: idempotencyKeysRepo.claim,
+      findByKeyAndUser: idempotencyKeysRepo.findByKeyAndUser,
+      markCompleted: async () => {
+        throw new Error('store down')
+      },
+      release: async () => {
+        throw new Error('store down')
+      }
+    }
+    const originalConsoleError = console.error
+    const logs = []
+    console.error = (...args) => {
+      logs.push(args)
+    }
+
+    try {
+      const completingApp = buildAppWithStoreAndStatus(failingStore, 201)
+      await request.execute(completingApp).post('/orders').set('x-test-user', testUserLogging).set('Idempotency-Key', 'log-key-1').send({ a: 1 })
+      const failingApp = buildAppWithStoreAndStatus(failingStore, 500)
+      await request.execute(failingApp).post('/orders').set('x-test-user', testUserLogging).set('Idempotency-Key', 'log-key-2').send({ a: 1 })
+    } finally {
+      console.error = originalConsoleError
+    }
+
+    expect(logs).to.have.length(2)
+    expect(logs[0][0]).to.include('log-key-1')
+    expect(logs[0][0]).to.include(testUserLogging)
+    expect(logs[1][0]).to.include('log-key-2')
+    expect(logs[1][0]).to.include(testUserLogging)
   })
 })

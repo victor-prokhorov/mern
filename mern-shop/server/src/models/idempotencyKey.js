@@ -7,6 +7,7 @@ const idempotencyKeySchema = new mongoose.Schema({
   status: { type: String, enum: ['in_progress', 'completed'], default: 'in_progress' },
   response: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now },
+  claimedAt: { type: Date, required: true, default: Date.now },
   expiresAt: { type: Date, required: true, expires: 0 }
 })
 
