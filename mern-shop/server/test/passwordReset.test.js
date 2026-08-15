@@ -16,21 +16,22 @@ function hashToken(rawToken) {
 describe('password reset', () => {
   useTestDb()
 
-  it('returns a byte-identical response for a known and an unknown email', async () => {
+  it('returns a byte-identical response for a known and an unknown email when token exposure is off', async () => {
     await seedUsers()
-    const previousEnv = process.env.NODE_ENV
-    process.env.NODE_ENV = 'production'
-
-    const known = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
-    const unknown = await request.execute(app).post('/api/auth/forgot-password').send({ email: 'nobody@shop.test' })
-    process.env.NODE_ENV = previousEnv
-
-    expect(known).to.have.status(202)
-    expect(unknown).to.have.status(202)
-    expect(JSON.stringify(known.body)).to.equal(JSON.stringify(unknown.body))
+    const previousValue = process.env.EXPOSE_RESET_TOKEN
+    try {
+      delete process.env.EXPOSE_RESET_TOKEN
+      const known = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+      const unknown = await request.execute(app).post('/api/auth/forgot-password').send({ email: 'nobody@shop.test' })
+      expect(known).to.have.status(202)
+      expect(unknown).to.have.status(202)
+      expect(JSON.stringify(known.body)).to.equal(JSON.stringify(unknown.body))
+    } finally {
+      process.env.EXPOSE_RESET_TOKEN = previousValue
+    }
   })
 
-  it('returns the raw token in the response outside production', async () => {
+  it('returns the raw token in the response only when EXPOSE_RESET_TOKEN=1', async () => {
     await seedUsers()
 
     const res = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
@@ -38,6 +39,19 @@ describe('password reset', () => {
     expect(res).to.have.status(202)
     expect(res.body.token).to.be.a('string')
     expect(res.body.token).to.have.length(64)
+  })
+
+  it('omits the token when EXPOSE_RESET_TOKEN is not set to 1', async () => {
+    await seedUsers()
+    const previousValue = process.env.EXPOSE_RESET_TOKEN
+    try {
+      delete process.env.EXPOSE_RESET_TOKEN
+      const res = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+      expect(res).to.have.status(202)
+      expect(res.body).to.not.have.property('token')
+    } finally {
+      process.env.EXPOSE_RESET_TOKEN = previousValue
+    }
   })
 
   it('resets the password with a valid token and the new password logs in', async () => {
@@ -103,6 +117,22 @@ describe('password reset', () => {
 
     expect(res).to.have.status(400)
     expect(res.body.error).to.equal('reset token is invalid or expired')
+  })
+
+  it('consumes a token exactly once under concurrent reset requests', async () => {
+    await seedUsers()
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+
+    const responses = await Promise.all([
+      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'firstpass1' }),
+      request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'secondpass1' })
+    ])
+
+    const succeeded = responses.filter((res) => res.status === 200)
+    const rejected = responses.filter((res) => res.status === 400)
+    expect(succeeded).to.have.length(1)
+    expect(rejected).to.have.length(1)
+    expect(rejected[0].body.error).to.equal('reset token is invalid or expired')
   })
 
   it('rejects a short password', async () => {
