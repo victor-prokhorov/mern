@@ -6,7 +6,7 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
 
 ## How it works here
 
-1. `services/orders.js:11` (`place`) runs the existing checks first — invalid user, the blocklist's account-identity gate (`services/orders.js:15`: `user.blockedAt` or the account's own email on the pattern blocklist), cart existence — before fraud scoring ever runs, so a hard identity block never reaches the scoring step at all. That gate deliberately does **not** look at the checkout-supplied `customer.email` — see [`../blocklist/README.md`](../blocklist/README.md) for why that value is this layer's job, not the blocklist's.
+1. Two gates run before the service is even entered: `requireAuth` (`routes/orders.js:8`) rejects an unauthenticated request, so the `userId` the scorer works from is the one a verified access token names rather than anything the client typed ([`../session/README.md`](../session/README.md)), and the `idempotency` middleware on the same line replays a stored response for a repeated key without re-scoring ([`../idempotency/README.md`](../idempotency/README.md)). Then `services/orders.js:11` (`place`) runs the existing checks — invalid user, the blocklist's account-identity gate (`services/orders.js:15`: `user.blockedAt` or the account's own email on the pattern blocklist), cart existence — before fraud scoring ever runs, so a hard identity block never reaches the scoring step at all. That gate deliberately does **not** look at the checkout-supplied `customer.email` — see [`../blocklist/README.md`](../blocklist/README.md) for why that value is this layer's job, not the blocklist's.
 2. Once the order's `items` and `total` are computed, `services/orders.js:27-30` fetches the pieces of state the signals need but cannot compute themselves: `orderStats.countRecentOrders` (`repositories/orderStats.js:3-5`, a `countDocuments` query for this user's orders in the last hour) and, separately from the account-identity gate above, `blocks.isBlockedEmail(customer.email)` — the checkout-supplied email, checked here against the same pattern blocklist purely as a fraud signal input, not as a hard gate.
 3. `services/orders.js:31` calls `evaluateSignals({ user, cart, customer, stats, now })` (`fraud/signals.js:46-49`), which computes `now` once (from the passed value, or `Date.now()` if none was passed) and runs every signal function in `signalFns` (`fraud/signals.js:44`) over that same context, so every signal sees an identical, fixed instant in time rather than each independently reading the clock.
 4. Each signal (`fraud/signals.js:9-42`) is a small, synchronous, pure function: `{ code, weight, triggered, detail }` out, given only plain data — no database calls, no `req`/`res`, no internal clock reads, nothing async — so every signal is unit-tested by calling it directly with a hand-built context, and two calls with the same context always produce the same result. Six are implemented, with the thresholds and weights named in `fraud/signals.js:3-7`:
@@ -37,7 +37,7 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
 - **Feedback loops and labelling chargebacks**: a mature fraud system feeds confirmed chargebacks and confirmed-legitimate reviews back into retuning the weights (or training the model); without that loop, thresholds calibrated once slowly drift out of sync with how attackers actually behave.
 - **Why the score never reaches the client**: returning the score (or the reason codes) hands an attacker a free oracle to probe against — vary one field at a time, watch the score/decision change, and reverse-engineer which signals matter and by how much. Keeping it server-side-only removes that feedback channel.
 - **Velocity checks and what state they need**: `ORDER_VELOCITY` needs a rolling count of an account's own recent orders (`repositories/orderStats.js`), which only exists because `Order` already records `createdAt` per order — a velocity signal is only as good as the event history it can query.
-- **Idempotency and replay**: this endpoint has no idempotency key, so retrying the exact same checkout request creates a second order and, notably, pushes the account's own `ORDER_VELOCITY` count up on each retry — a client-side retry-on-timeout can inadvertently manufacture the very signal that gets a legitimate customer's next order held for review.
+- **Idempotency and replay**: `POST /api/orders` now supports an `Idempotency-Key` header ([`../idempotency/README.md`](../idempotency/README.md)), but only when the client sends one — the header is optional, and a request without it is handled exactly as before. So the interaction is worth stating precisely rather than assuming it away: a client that retries *without* a key creates a second order and pushes its own `ORDER_VELOCITY` count up on each retry, and a retry-on-timeout can therefore manufacture the very signal that gets that customer's next order held for review. A client that retries *with* the same key replays the stored response and never re-enters the scorer at all, so the velocity count is unmoved. This is the sharpest argument in this repo for making the key mandatory on a scored endpoint: the cost of a missing key is not just a duplicate order, it is a duplicate order that degrades the customer's own fraud score.
 - **Adversarial adaptation**: a fixed rules engine is a fixed target — once an attacker learns the thresholds (by probing, by leaked documentation, or simply by trial and error), they optimize around them (e.g. splitting one large order into several just under the `HIGH_VALUE` threshold). Rules need periodic revision for exactly this reason; a scoring system with no history of updates is one attackers have long since mapped out.
 
 ## Standard practice
@@ -59,7 +59,8 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
 - No customer-facing consequence of the middle band — a `review` order looks identical to a `pending` one from the client's side, so there is no notification, no hold on fulfilment, and nothing telling the customer their order is delayed.
 - No path for a customer to contest a decision or reach a human, which is the safeguard Article 22(3) GDPR names first for decisions that fall under it.
 - No feedback loop: nothing here records which `review` orders were later confirmed as fraud or confirmed as legitimate, so the weights in `fraud/signals.js` can never be data-driven; they were chosen by hand to produce sane behavior against this repo's own test fixtures.
-- No idempotency key on order placement, so naive client retries inflate `ORDER_VELOCITY` for legitimate customers (see "idempotency and replay" above).
+- Idempotency keys on order placement are optional, so a naive client that omits the header still inflates its own `ORDER_VELOCITY` on every retry (see "idempotency and replay" above). Nothing here makes the key mandatory on the endpoint the scorer guards.
+- Nothing feeds a denied or reviewed order back into the signals as state: a customer whose order was just denied can retry immediately and be scored from scratch, since `deny` throws before an `Order` is written and `ORDER_VELOCITY` only counts written orders. A real system counts *attempts*, not just successes.
 - No IP, device, or payment-instrument signals (new device, mismatched billing/shipping geography, card BIN country, proxy/VPN detection) — this demo only has six of many signals a production system would run.
 - No per-customer or per-merchant-segment threshold overrides — `THRESHOLDS` is global.
 - No machine-learning layer at all, and no historical data pipeline to eventually train one.
@@ -67,12 +68,25 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
 
 ## Try it
 
-With the dev server running and seed data loaded, place a small, unremarkable order — it should be created immediately with `status: "pending"` and no `fraud` field in the response:
+With the dev server running (`JWT_SECRET=dev-secret npm run dev`) and seed data loaded, log in first — checkout is authenticated now, and the account the score is computed against is the one the access token names, never anything in the request body ([`../session/README.md`](../session/README.md)):
 
 ```bash
+curl -s -X POST http://localhost:5000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo@shop.test","password":"demo1234"}'
+```
+
+Take the `accessToken` from that response and use it on every order below. Put something in a cart and place a small, unremarkable order — it should be created immediately with `status: "pending"` and no `fraud` field in the response:
+
+```bash
+curl -s -X POST http://localhost:5000/api/cart/cart-1/items \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":"<the Ceramic Mug id>","qty":1}'
+
 curl -i -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
-  -d '{"cartId":"cart-1","userId":"<a real user id>","customer":{"name":"Ada","email":"demo@shop.test","address":"1 Main Street"}}'
+  -H 'Authorization: Bearer <accessToken>' \
+  -d '{"cartId":"cart-1","customer":{"name":"Ada","email":"demo@shop.test","address":"1 Main Street"}}'
 ```
 
 A note on that first order: a freshly seeded account is minutes old, so `NEW_ACCOUNT` (20) already fires. The score is 20, below the review threshold of 30, so the decision is `allow` — you are not seeing a zero-signal order, you are seeing one signal that isn't enough on its own. That is the intended shape of a weighted score.
@@ -86,26 +100,35 @@ curl -s -X POST http://localhost:5000/api/cart/cart-a/items \
 
 curl -s -X POST http://localhost:5000/api/orders \
   -H 'Content-Type: application/json' \
-  -d '{"cartId":"cart-a","userId":"<a real user id>","customer":{"name":"Ada","email":"demo@shop.test","address":"1 Main Street"}}'
+  -H 'Authorization: Bearer <accessToken>' \
+  -d '{"cartId":"cart-a","customer":{"name":"Ada","email":"demo@shop.test","address":"1 Main Street"}}'
 ```
 
 The response is `201` with `"status":"review"` and, as always, no `fraud` field.
 
-For `deny`, add velocity. `ORDER_VELOCITY` fires at *more than* 3 orders in the last hour, so it needs four already on record before the order being scored. Place three more plain orders, then repeat the large one: 30 + 20 + 20 + 25 = 95, past the deny threshold of 70:
+For `deny`, add velocity. `ORDER_VELOCITY` fires at *more than* 3 orders in the last hour, so it needs four already on record before the order being scored. The two orders above are the first two; place three more plain ones, then repeat the large order into a fresh cart: 30 + 20 + 20 + 25 = 95, past the deny threshold of 70:
 
 ```bash
+export AT='<accessToken>'
 for c in cart-b1 cart-b2 cart-b3; do
   curl -s -o /dev/null -X POST http://localhost:5000/api/cart/$c/items \
     -H 'Content-Type: application/json' -d '{"productId":"<the Ceramic Mug id>","qty":1}'
   curl -s -o /dev/null -X POST http://localhost:5000/api/orders \
-    -H 'Content-Type: application/json' \
-    -d "{\"cartId\":\"$c\",\"userId\":\"<a real user id>\",\"customer\":{\"name\":\"Ada\",\"email\":\"demo@shop.test\",\"address\":\"1 Main Street\"}}"
+    -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" \
+    -d "{\"cartId\":\"$c\",\"customer\":{\"name\":\"Ada\",\"email\":\"demo@shop.test\",\"address\":\"1 Main Street\"}}"
 done
+
+curl -s -o /dev/null -X POST http://localhost:5000/api/cart/cart-c/items \
+  -H 'Content-Type: application/json' -d '{"productId":"<the Ceramic Mug id>","qty":20}'
+
+curl -s -X POST http://localhost:5000/api/orders \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" \
+  -d '{"cartId":"cart-c","customer":{"name":"Ada","email":"demo@shop.test","address":"1 Main Street"}}'
 ```
 
-The next large order returns `403 { "error": "order could not be completed" }`. Work the arithmetic out for your own case rather than trusting the recipe — on an account older than 24 hours `NEW_ACCOUNT` drops out and the same order scores 75, still a deny; drop `QUANTITY_ANOMALY` as well and it is 50, a review. The thresholds are three lines away in `fraud/score.js:1`.
+That last order returns `403 { "error": "order could not be completed" }`. Work the arithmetic out for your own case rather than trusting the recipe — on an account older than 24 hours `NEW_ACCOUNT` drops out and the same order scores 75, still a deny; drop `QUANTITY_ANOMALY` as well and it is 50, a review. The thresholds are three lines away in `fraud/score.js:1`.
 
-Confirm the deny left the cart alone, which is the property that makes a refusal safe to retry:
+Confirm the deny left `cart-c` alone, which is the property that makes a refusal safe to retry:
 
 ```bash
 curl -s http://localhost:5000/api/cart/cart-c

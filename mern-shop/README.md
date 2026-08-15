@@ -25,10 +25,23 @@ cd server
 npm install
 cp .env.example .env
 npm run seed
-npm run dev
+JWT_SECRET=dev-secret npm run dev
 ```
 
 API on `http://localhost:5000`.
+
+### Environment
+
+`.env.example` covers `PORT` and `MONGO_URI` only. Three more variables matter,
+and the first one is not optional:
+
+| Variable | Needed for | If unset |
+|---|---|---|
+| `JWT_SECRET` | signing and verifying access tokens | **the server refuses to start** — `src/session/tokens.js` throws at import rather than fall back to a hardcoded secret |
+| `ADMIN_TOKEN` | the `POST`/`DELETE /api/blocks` admin surface | every admin request gets `401`, including one sending the right token |
+| `EXPOSE_RESET_TOKEN=1` | reading a password-reset token back out of the API response, since there is no mail sender | the reset flow works but there is no way to obtain a token by hand |
+
+`npm test` sets all three itself, so tests do not need a `.env`.
 
 ## Client
 
@@ -39,6 +52,19 @@ npm run dev
 ```
 
 Client on `http://localhost:5173`, proxying `/api` to the server on `:5000`.
+
+## Topics
+
+Six guides live beside the code they describe.
+
+| Topic | Guide |
+|---|---|
+| Password reset | [`server/src/passwordReset`](server/src/passwordReset/README.md) |
+| Rate limiting | [`server/src/rateLimit`](server/src/rateLimit/README.md) |
+| User blocklist | [`server/src/blocklist`](server/src/blocklist/README.md) |
+| Fraud scoring | [`server/src/fraud`](server/src/fraud/README.md) |
+| Idempotency keys | [`server/src/idempotency`](server/src/idempotency/README.md) |
+| Sessions, rotation, revocation | [`server/src/session`](server/src/session/README.md) |
 
 ## Tests
 
