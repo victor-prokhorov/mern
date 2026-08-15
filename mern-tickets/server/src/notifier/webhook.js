@@ -1,3 +1,7 @@
+import { createCircuitBreaker } from '../circuitBreaker/breaker.js'
+
+const DEFAULT_TIMEOUT_MS = 1000
+
 export class WebhookResponseError extends Error {
   constructor(status) {
     super(`webhook responded ${status}`)
@@ -5,18 +9,49 @@ export class WebhookResponseError extends Error {
   }
 }
 
-export function isWebhookFailure() {
-  throw new Error('not implemented')
+export function isWebhookFailure(err) {
+  const status = err.status
+  if (typeof status !== 'number') return true
+  if (status === 408 || status === 429) return true
+  return !(status >= 400 && status < 500)
 }
 
-export function createNotifier() {
-  throw new Error('not implemented')
+function logTransition(event) {
+  console.log(`webhook breaker ${event.from} -> ${event.to} stats=${JSON.stringify(event.stats)}`)
 }
 
-export async function notify() {
-  throw new Error('not implemented')
+export function createNotifier(overrides = {}) {
+  const timeoutMs = overrides.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const breaker = createCircuitBreaker({ ...overrides, isFailure: isWebhookFailure, onStateChange: logTransition })
+  async function post(url, event) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(event),
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+    if (!res.ok) throw new WebhookResponseError(res.status)
+    return res
+  }
+  async function notify(event) {
+    const url = overrides.url ?? process.env.TICKET_WEBHOOK_URL
+    if (!url) return
+    try {
+      await breaker.call(() => post(url, event))
+    } catch (err) {
+      console.error(`webhook notify failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  return {
+    notify,
+    stats: breaker.stats,
+    get state() {
+      return breaker.state
+    }
+  }
 }
 
-export function stats() {
-  throw new Error('not implemented')
-}
+const defaultNotifier = createNotifier()
+
+export const notify = defaultNotifier.notify
+export const stats = defaultNotifier.stats

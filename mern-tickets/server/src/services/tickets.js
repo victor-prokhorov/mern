@@ -7,6 +7,7 @@ import { BadRequestError, NotFoundError } from '../middleware/error.js'
 import { authorize } from '../policy/engine.js'
 import { throttle } from '../throttle/tokenBucket.js'
 import { run as runHooks } from '../hooks/registry.js'
+import { notify } from '../notifier/webhook.js'
 
 export const TRANSITIONS = {
   open: ['triaged'],
@@ -50,6 +51,7 @@ export async function create({ subject, title, body, priority }) {
     moderation: outcome.payload.moderation || { flagged: false, terms: [] }
   })
   await ticketEvents.create({ ticket: ticket._id, actor: reporter._id, type: 'created', from: null, to: 'open' })
+  notify({ type: 'ticket:created', ticketId: ticket._id.toString(), status: ticket.status })
   return ticket
 }
 
@@ -82,6 +84,7 @@ export async function transitionStatus({ subject, id, status }) {
   ticket.status = status
   await tickets.save(ticket)
   await ticketEvents.create({ ticket: ticket._id, actor: subject.id, type: 'status_changed', from, to: status })
+  notify({ type: 'ticket:status-changed', ticketId: ticket._id.toString(), status: ticket.status })
   return ticket
 }
 
