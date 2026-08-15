@@ -99,13 +99,13 @@ function buildSlowStoreApp(status, delayMs) {
   const store = {
     claim: idempotencyKeysRepo.claim,
     findByKeyAndUser: idempotencyKeysRepo.findByKeyAndUser,
-    markCompleted: async (id, response) => {
+    markCompleted: async (id, epoch, response) => {
       await delay(delayMs)
-      return idempotencyKeysRepo.markCompleted(id, response)
+      return idempotencyKeysRepo.markCompleted(id, epoch, response)
     },
-    release: async (id) => {
+    release: async (id, epoch) => {
       await delay(delayMs)
-      return idempotencyKeysRepo.release(id)
+      return idempotencyKeysRepo.release(id, epoch)
     }
   }
   const built = express()

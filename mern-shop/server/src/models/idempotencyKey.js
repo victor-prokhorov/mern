@@ -8,6 +8,7 @@ const idempotencyKeySchema = new mongoose.Schema({
   response: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now },
   claimedAt: { type: Date, required: true, default: Date.now },
+  epoch: { type: Number, required: true, default: 1 },
   expiresAt: { type: Date, required: true, expires: 0 }
 })
 

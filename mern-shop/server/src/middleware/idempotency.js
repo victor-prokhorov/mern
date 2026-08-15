@@ -56,9 +56,15 @@ export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_M
       const replayableBody = JSON.parse(JSON.stringify(body))
       try {
         if (status >= 500) {
-          await store.release(claimed._id)
+          const released = await store.release(claimed._id, claimed.epoch)
+          if (released.deletedCount === 0) {
+            console.warn(`idempotency: release for key=${key} user=${user} was superseded by a later claim epoch, left the newer claim untouched`)
+          }
         } else {
-          await store.markCompleted(claimed._id, { status, body: replayableBody })
+          const completed = await store.markCompleted(claimed._id, claimed.epoch, { status, body: replayableBody })
+          if (!completed) {
+            console.warn(`idempotency: markCompleted for key=${key} user=${user} was superseded by a later claim epoch, left the newer claim untouched`)
+          }
         }
       } catch (err) {
         console.error(`idempotency: failed to persist claim outcome for key=${key} user=${user} status=${status}`, err)
