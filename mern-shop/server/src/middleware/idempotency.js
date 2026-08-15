@@ -2,8 +2,9 @@ import * as idempotencyKeysRepo from '../repositories/idempotencyKeys.js'
 import { computeFingerprint } from '../idempotency/fingerprint.js'
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
+const DEFAULT_LEASE_MS = 30 * 1000
 
-export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_MS, userIdFrom }) {
+export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_MS, leaseMs = DEFAULT_LEASE_MS, userIdFrom }) {
   return async function idempotencyMiddleware(req, res, next) {
     const key = req.get('Idempotency-Key')
     if (!key) {
@@ -30,14 +31,24 @@ export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_M
         res.status(422).json({ error: 'idempotency key was reused with a different request body' })
         return
       }
-      if (existing.status === 'in_progress') {
+      if (existing.status === 'completed') {
+        res.set('Idempotent-Replay', 'true')
+        res.status(existing.response.status).json(existing.response.body)
+        return
+      }
+      const staleBefore = new Date(Date.now() - leaseMs)
+      if (existing.claimedAt > staleBefore) {
         res.set('Retry-After', '1')
         res.status(409).json({ error: 'a request with this idempotency key is already in progress' })
         return
       }
-      res.set('Idempotent-Replay', 'true')
-      res.status(existing.response.status).json(existing.response.body)
-      return
+      const reclaimed = await store.reclaimStale({ key, user, requestFingerprint, expiresAt, staleBefore })
+      if (!reclaimed) {
+        res.set('Retry-After', '1')
+        res.status(409).json({ error: 'a request with this idempotency key is already in progress' })
+        return
+      }
+      claimed = reclaimed
     }
     const originalJson = res.json.bind(res)
     res.json = async (body) => {
@@ -50,7 +61,7 @@ export function idempotency({ store = idempotencyKeysRepo, ttlMs = DEFAULT_TTL_M
           await store.markCompleted(claimed._id, { status, body: replayableBody })
         }
       } catch (err) {
-        if (status < 500) await store.release(claimed._id).catch(() => {})
+        console.error(`idempotency: failed to persist claim outcome for key=${key} user=${user} status=${status}`, err)
       }
       return originalJson(body)
     }
