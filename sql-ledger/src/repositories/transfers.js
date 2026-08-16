@@ -24,16 +24,18 @@ export async function findById(client, id) {
   return rows[0] || null
 }
 
+const KEYSET_COLUMNS = 'id, reference, status, created_at, to_char(created_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.US"Z"\') AS created_at_cursor'
+
 export async function findPageKeyset(client, { limit, cursor }) {
   if (!cursor) {
     const { rows } = await client.query(
-      'SELECT id, reference, status, created_at FROM transfers ORDER BY created_at DESC, id DESC LIMIT $1',
+      `SELECT ${KEYSET_COLUMNS} FROM transfers ORDER BY created_at DESC, id DESC LIMIT $1`,
       [limit]
     )
     return rows
   }
   const { rows } = await client.query(
-    'SELECT id, reference, status, created_at FROM transfers WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3',
+    `SELECT ${KEYSET_COLUMNS} FROM transfers WHERE (created_at, id) < ($1::timestamptz, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
     [cursor.createdAt, cursor.id, limit]
   )
   return rows

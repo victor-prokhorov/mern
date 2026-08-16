@@ -53,8 +53,8 @@ export async function listKeyset({ limit, cursor }) {
   const hasMore = rows.length > clampedLimit
   const page = hasMore ? rows.slice(0, clampedLimit) : rows
   const last = page[page.length - 1]
-  const nextCursor = hasMore && last ? encodeCursor({ createdAt: last.created_at, id: last.id }) : null
-  return { transfers: page, nextCursor }
+  const nextCursor = hasMore && last ? encodeCursor({ createdAt: last.created_at_cursor, id: last.id }) : null
+  return { transfers: page.map(({ created_at_cursor, ...transfer }) => transfer), nextCursor }
 }
 
 export async function listOffsetDemo({ limit, offset }) {
