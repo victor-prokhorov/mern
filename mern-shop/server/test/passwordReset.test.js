@@ -4,6 +4,7 @@ import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
 import User from '../src/models/user.js'
+import Session from '../src/models/session.js'
 import PasswordReset from '../src/models/passwordReset.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { requireAuth } from '../src/middleware/auth.js'
@@ -192,25 +193,24 @@ describe('password reset', () => {
     expect(refreshed).to.have.status(401)
   })
 
-  it('revokes sessions before the password hash write, so a crash between the two leaves the password unchanged and the sessions dead', async () => {
+  it('writes the password hash before revoking sessions, so a crash at the revocation step never leaves the old password live', async () => {
     await seedUsers()
-    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
     const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
-    const originalUpdateOne = User.updateOne
+    const originalUpdateMany = Session.updateMany
 
-    User.updateOne = () => { throw new Error('simulated crash at the password hash write') }
+    Session.updateMany = () => { throw new Error('simulated crash at the session revocation write') }
     let reset
     try {
       reset = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
     } finally {
-      User.updateOne = originalUpdateOne
+      Session.updateMany = originalUpdateMany
     }
-    const refreshed = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: login.body.refreshToken })
     const oldPasswordLogin = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+    const newPasswordLogin = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: 'correct-horse-battery' })
 
     expect(reset).to.have.status(500)
-    expect(refreshed).to.have.status(401)
-    expect(oldPasswordLogin).to.have.status(200)
+    expect(oldPasswordLogin).to.have.status(401)
+    expect(newPasswordLogin).to.have.status(200)
   })
 
   it('declares a TTL index on expiresAt so used and expired rows are reaped', async () => {
