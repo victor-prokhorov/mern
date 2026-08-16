@@ -23,7 +23,7 @@ spot rather than a thing that doesn't matter.
 - Pagination: keyset vs offset, opaque cursors `[covered]` ([pagination](sql-ledger/src/pagination/README.md))
 - Full-text search, relevance ranking, `tsvector` `[roadmap]` (should-have #8)
 - Time and timezones: instants vs wall-clock, DST, TIMESTAMPTZ, IANA tz `[covered]` ([cadence](sql-scheduler/src/cadence/README.md))
-- Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #13)
+- Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #16)
 - Partitioning and sharding (by range, hash, tenant) — not built
 - Data retention, archival, TTL/reaping `[covered]` (idempotency/rate-limit TTL, outbox growth notes)
 
@@ -54,7 +54,7 @@ spot rather than a thing that doesn't matter.
 - TTL vs invalidation, negative caching, stale-while-revalidate `[roadmap]` (must-have #1)
 - Cache stampede / thundering herd, single-flight, early expiry `[roadmap]` (must-have #1)
 - HTTP caching: Cache-Control, ETag, 304, CDN edge `[roadmap]` (must-have #1)
-- N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #10)
+- N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #13)
 - Connection pooling, prepared statements — concept only
 - Query plans and index-driven performance `[roadmap]` (should-have #8)
 
@@ -77,7 +77,7 @@ spot rather than a thing that doesn't matter.
 - Fraud scoring, reason codes, explainability, GDPR Art. 22 `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Content moderation, keyword/allowlist, Unicode security `[covered]` ([moderation](mern-tickets/server/src/moderation/README.md))
 - Secrets management, key rotation `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)) + AWS/GCP sections)
-- Multi-tenancy isolation `[roadmap]` (nice-to-have #12)
+- Multi-tenancy isolation `[roadmap]` (nice-to-have #15)
 - Audit logs vs event sourcing, tamper-evidence `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md), [ledger](sql-ledger/src/ledger/README.md))
 
 ### Reliability and resilience
@@ -96,6 +96,29 @@ spot rather than a thing that doesn't matter.
 - Health checks: liveness vs readiness `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
 - Alerting: dedup, hysteresis, cooldown, liveness vs lag rules `[covered]` ([alerting](sql-scheduler/src/alerting/README.md))
 - SLOs, error budgets — concept only
+
+### Microservices and inter-service communication
+- Sync RPC vs async messaging vs shared-DB integration — choosing the boundary — not built
+- gRPC and HTTP/2 (streaming, multiplexing, deadlines, interceptors) — not built
+- Binary serialization: Protobuf, Avro, Thrift, MessagePack vs JSON — size, speed, and schema `[covered]` (concept only, via serialization tradeoffs in AWS/GCP notes) — no dedicated guide
+- Schema/IDL evolution: field numbers, forward/backward compatibility, schema registry `[roadmap]` (should-have #9, event side) — RPC/IDL side not built
+- Service discovery, client-side vs server-side load balancing — not built
+- Service mesh (Envoy, Istio), sidecars, outlier detection `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) contrasts app-level breaker vs mesh)
+- API gateway, backend-for-frontend (BFF), edge aggregation `[covered]` (concept only, across AWS/GCP sections)
+- Contract testing across service boundaries (Pact) `[roadmap]` (should-have #7)
+- OpenAPI / Swagger: spec-first vs code-first, codegen, request/response validation from the contract `[roadmap]` (should-have #11)
+- Distributed tracing across hops, context propagation `[covered]` (concept, ([observability](mern-tickets/server/src/observability/README.md)))
+- Monolith vs microservices vs modular monolith — the actual tradeoff — not built
+
+### Containers, orchestration, platform
+- Containers and images: layering, multi-stage builds, minimal base images — not built
+- Kubernetes core objects: Pod, Deployment, ReplicaSet, Service, Ingress, ConfigMap, Secret `[roadmap]` (should-have #12)
+- Liveness/readiness/startup probes `[covered]` (the app side, ([observability](mern-tickets/server/src/observability/README.md))) — the K8s wiring itself not built
+- Rolling updates, `terminationGracePeriodSeconds`, graceful shutdown contract `[covered]` (app side, ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md)))
+- Horizontal Pod Autoscaler, resource requests/limits, QoS — not built
+- Config and secrets injection, 12-factor config — concept only (env-var config used repo-wide)
+- Service mesh at the platform layer (Istio/Linkerd) — see inter-service comms above
+- Serverless (Lambda, Cloud Run) as the alternative to orchestrating long-lived processes `[covered]` (concept, across the AWS/GCP sections)
 
 ### Scaling and distribution
 - Horizontal vs vertical scaling, statelessness — concept only
@@ -123,7 +146,7 @@ spot rather than a thing that doesn't matter.
 - Rules engines vs ML, explainable decisions `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Recommendations: content vs collaborative filtering, cold start `[covered]` ([recommendations](mern-movies/server/src/recommendations/README.md))
 - Hooks/pipelines vs middleware vs events `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
-- Node runtime internals: event loop, workers, stream backpressure `[roadmap]` (nice-to-have #11)
+- Node runtime internals: event loop, workers, stream backpressure `[roadmap]` (nice-to-have #14)
 
 ## Existing guides — the index
 
@@ -168,10 +191,14 @@ spot rather than a thing that doesn't matter.
 7. **API evolution and versioning** — additive vs breaking changes, version-in-URL vs header vs none, deprecation policy, consumer contract tests (Pact-style)
 8. **Search and query plans** — `EXPLAIN ANALYZE`, index selection, covering indexes, full-text search (Postgres `tsvector`), relevance ranking basics
 9. **Event schema evolution** — versioning event payloads, upcasting old events, schema registry ideas, forward/backward compatibility rules
+10. **Inter-service communication and binary serialization** — sync RPC vs async messaging boundary, gRPC over HTTP/2 (streaming, deadlines, interceptors), Protobuf/Avro/Thrift/MessagePack vs JSON (size, speed, schema), IDL evolution and field-number compatibility, service discovery, load balancing, service mesh vs app-level resilience
+
+11. **OpenAPI-driven APIs** — spec-first design, generated clients/servers, runtime request/response validation against the contract, keeping the spec and code from drifting
+12. **Kubernetes deployment** — containerizing one of these apps, Deployment + Service + Ingress, probes wired to `/healthz`/`/readyz`, ConfigMap/Secret injection, rolling update + graceful shutdown, resource limits and an HPA
 
 ## Roadmap — nice-to-have
 
-10. **N+1 and dataloaders** — batching, per-request caching, the GraphQL version of the problem
-11. **Node internals** — event loop phases, blocking the loop, worker threads, stream backpressure
-12. **Multi-tenancy** — tenant isolation models (row/schema/database), noisy neighbours, per-tenant limits
-13. **Blob storage and uploads** — presigned URLs, direct-to-storage uploads, content-type validation, lifecycle policies
+13. **N+1 and dataloaders** — batching, per-request caching, the GraphQL version of the problem
+14. **Node internals** — event loop phases, blocking the loop, worker threads, stream backpressure
+15. **Multi-tenancy** — tenant isolation models (row/schema/database), noisy neighbours, per-tenant limits
+16. **Blob storage and uploads** — presigned URLs, direct-to-storage uploads, content-type validation, lifecycle policies
