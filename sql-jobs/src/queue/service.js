@@ -26,7 +26,12 @@ export async function reapExpired(pool, options = {}) {
   for (const job of reaped) {
     if (job.status !== 'dead') continue
     const onDead = getDeadHandler(job.kind)
-    if (onDead) await onDead(job)
+    if (!onDead) continue
+    try {
+      await onDead(job)
+    } catch (err) {
+      console.error('onDead handler failed', job.id, err instanceof Error ? err.message : String(err))
+    }
   }
   return reaped
 }
