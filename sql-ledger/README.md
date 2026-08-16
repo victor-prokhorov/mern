@@ -48,7 +48,7 @@ npm test        # bootstraps and truncates its own ledger_test database on every
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-41 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
+49 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `ledger_test` database created automatically on first run.
 
 ## Topics and their READMEs
 

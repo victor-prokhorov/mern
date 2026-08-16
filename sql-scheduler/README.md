@@ -77,7 +77,7 @@ npm test        # bootstraps and truncates its own scheduler_test database on ev
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-62 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `scheduler_test` database created automatically on first run.
+65 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `scheduler_test` database created automatically on first run.
 
 ## Topics and their READMEs
 
