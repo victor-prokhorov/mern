@@ -1,8 +1,13 @@
 import http from 'node:http'
+import express from 'express'
 import mongoose from 'mongoose'
+import { ObjectId } from 'mongodb'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
+import { errorHandler } from '../src/middleware/error.js'
+import { requestContext } from '../src/observability/middleware.js'
+import { authorize } from '../src/policy/engine.js'
 import { connect } from '../src/db.js'
 import { seedUsers } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
@@ -150,6 +155,40 @@ describe('observability', () => {
       expect(lines[0].level).to.equal('info')
       expect(lines[0].time).to.be.a('string')
       expect(lines[0].ticketId).to.equal('abc123')
+    })
+  })
+
+  describe('failure logging with correlation', () => {
+    it('logs a structured error entry carrying the request id when a route throws', async () => {
+      const lines = captureLines()
+      const broken = express()
+      broken.use(requestContext)
+      broken.get('/explode', () => { throw new Error('kaboom') })
+      broken.use(errorHandler)
+
+      const res = await request.execute(broken).get('/explode').set('X-Request-Id', 'req-explode')
+
+      expect(res).to.have.status(500)
+      const errorLine = lines.find((line) => line.msg === 'unhandled error')
+      expect(errorLine).to.not.equal(undefined)
+      expect(errorLine.requestId).to.equal('req-explode')
+      expect(errorLine.error).to.equal('kaboom')
+    })
+
+    it('logs a policy denial through the structured logger with the request correlation', () => {
+      const lines = captureLines()
+      const subject = { id: new ObjectId().toString(), role: 'agent', teamId: 'team-a' }
+
+      runWithContext({ requestId: 'req-denied', userId: subject.id, route: '/api/tickets' }, () => {
+        expect(() => authorize({ subject, action: 'ticket:create', resource: null, context: {} })).to.throw('forbidden')
+      })
+
+      const denialLine = lines.find((line) => line.msg === 'authorization denied')
+      expect(denialLine).to.not.equal(undefined)
+      expect(denialLine.requestId).to.equal('req-denied')
+      expect(denialLine.userId).to.equal(subject.id)
+      expect(denialLine.action).to.equal('ticket:create')
+      expect(denialLine.reason).to.be.a('string').and.not.equal('')
     })
   })
 
