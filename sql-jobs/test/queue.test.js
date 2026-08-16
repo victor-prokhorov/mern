@@ -126,6 +126,21 @@ describe('queue', () => {
       const { rows } = await pool.query('SELECT run_at > now() AS deferred FROM jobs WHERE id = $1', [job.id])
       expect(rows[0].deferred).to.equal(true)
     })
+
+    it('one throwing onDead callback does not prevent the other dead jobs callbacks from running', async () => {
+      const calls = []
+      registerHandler('kind_a', () => {}, { onDead: () => { calls.push('a'); throw new Error('onDead a failed') } })
+      registerHandler('kind_b', () => {}, { onDead: () => { calls.push('b') } })
+      await jobsRepo.enqueue(pool, { kind: 'kind_a', payload: {}, maxAttempts: 1 })
+      await jobsRepo.enqueue(pool, { kind: 'kind_b', payload: {}, maxAttempts: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 2, leaseMs: 1 })
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool)
+
+      expect(reaped.map((r) => r.status)).to.deep.equal(['dead', 'dead'])
+      expect(calls).to.deep.equal(['a', 'b'])
+    })
   })
 
   describe('heartbeat', () => {
