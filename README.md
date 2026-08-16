@@ -16,6 +16,7 @@ toy skips, and further reading.
 | [mern-tickets](mern-tickets/) | Support-ticket API. Workflow state machine, authorization, moderation, throttling. Server only. |
 | [mern-movies](mern-movies/) | Movie API. Recommendations and follow/notify fan-out. Server only. |
 | [sql-ledger](sql-ledger/) | Postgres double-entry ledger. Transactional outbox, zero-downtime expand-contract migrations, keyset pagination. Server only. |
+| [sql-scheduler](sql-scheduler/) | Postgres-backed scheduling and alarming. Timezone-correct cadences, exactly-once ticking, catch-up policies, and alert deduplication/hysteresis. Server only. |
 
 ## Topics
 
@@ -44,6 +45,9 @@ Twenty-one guides, each beside the code it describes.
 | Zero-downtime migrations (expand-contract) | [sql-ledger/src/migrations](sql-ledger/src/migrations/README.md) |
 | Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
 | Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
+| Timezone-correct cadences and DST | [sql-scheduler/src/cadence](sql-scheduler/src/cadence/README.md) |
+| Exactly-once ticking, catch-up policies, drift | [sql-scheduler/src/scheduler](sql-scheduler/src/scheduler/README.md) |
+| Alert dedup, hysteresis, cooldown | [sql-scheduler/src/alerting](sql-scheduler/src/alerting/README.md) |
 | Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).

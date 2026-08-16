@@ -1,3 +1,6 @@
+import { pool } from '../db.js'
+import * as notificationsRepo from '../repositories/notifications.js'
+
 export async function listNotifications() {
-  throw new Error('not implemented')
+  return notificationsRepo.list(pool)
 }
