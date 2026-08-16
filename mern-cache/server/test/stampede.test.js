@@ -44,4 +44,25 @@ describe('cache stampede / single-flight', () => {
     expect(second.source).to.equal('cache')
     expect(state.calls).to.equal(1)
   })
+
+  it('propagates a loader failure to every coalesced waiter and caches nothing', async () => {
+    const state = { calls: 0 }
+    async function loader() {
+      state.calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      throw new Error('origin down')
+    }
+    const store = createStore()
+    const cache = createCache({ store, loader, ttlMs: 1000 })
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => cache.get('p1').then(() => 'fulfilled', (err) => err.message))
+    )
+    const retry = await cache.get('p1').then(() => 'fulfilled', (err) => err.message)
+
+    expect(results).to.deep.equal(Array.from({ length: 5 }, () => 'origin down'))
+    expect(retry).to.equal('origin down')
+    expect(store.size()).to.equal(0)
+    expect(state.calls).to.equal(2)
+  })
 })

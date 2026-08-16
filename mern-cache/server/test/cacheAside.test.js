@@ -41,11 +41,14 @@ describe('cache-aside (lazy loading)', () => {
 
   it('expires the negative entry on its own shorter TTL, then reloads', async () => {
     const { loader, state } = makeOrigin({})
-    const cache = createCache({ store: createStore(), loader, ttlMs: 100000, negativeTtlMs: 1000 })
+    let t = 0
+    const cache = createCache({ store: createStore(), loader, ttlMs: 100000, negativeTtlMs: 1000, clock: () => t })
 
-    await cache.get('ghost', 0)
-    const withinNegative = await cache.get('ghost', 500)
-    const afterNegative = await cache.get('ghost', 1500)
+    await cache.get('ghost')
+    t = 500
+    const withinNegative = await cache.get('ghost')
+    t = 1500
+    const afterNegative = await cache.get('ghost')
 
     expect(withinNegative.source).to.equal('negative')
     expect(afterNegative.source).to.equal('origin')
