@@ -29,7 +29,7 @@ export function parseCadence(cadence) {
   if (weeklyMatch) {
     const dayNames = weeklyMatch[1].split(',')
     const days = dayNames.map((name) => {
-      if (!(name in WEEKDAY_NAMES)) throw new Error(`invalid cadence: ${cadence}`)
+      if (!Object.hasOwn(WEEKDAY_NAMES, name)) throw new Error(`invalid cadence: ${cadence}`)
       return WEEKDAY_NAMES[name]
     })
     const hour = Number(weeklyMatch[2])

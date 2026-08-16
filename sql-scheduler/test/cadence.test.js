@@ -38,6 +38,12 @@ describe('parseCadence', () => {
     expect(() => parseCadence('weekly on mon,xyz at 18:00')).to.throw(/invalid cadence/)
   })
 
+  it('rejects a weekday name that only resolves via the Object prototype chain', () => {
+    expect(() => parseCadence('weekly on constructor at 09:00')).to.throw(/invalid cadence/)
+    expect(() => parseCadence('weekly on toString at 09:00')).to.throw(/invalid cadence/)
+    expect(() => parseCadence('weekly on hasOwnProperty at 09:00')).to.throw(/invalid cadence/)
+  })
+
   it('rejects a zero-length interval', () => {
     expect(() => parseCadence('every 0m')).to.throw(/invalid cadence/)
   })
