@@ -214,7 +214,7 @@ makes that repeatable instead of artisanal.
   of depth-counting.
 - **No coverage-guided test selection.** Every mutant runs the app's entire
   suite. There is no map from "this line" to "these tests," so a change deep
-  in `fraud/signals.js` reruns all 122 of `mern-shop`'s tests, not just the
+  in `fraud/signals.js` reruns all 125 of `mern-shop`'s tests, not just the
   handful that actually exercise it.
 - **No incremental mode.** Nothing here remembers that a mutant survived
   last week and the covering test hasn't changed since; every invocation
@@ -299,8 +299,9 @@ files (a seeded, capped sample each time, not exhaustive — see the audit
 report on the branch this file shipped on) produced 98.9% (mern-shop),
 93.1% (mern-tickets), 80.3% (mern-movies), and 67.5% (sql-ledger). That
 ordering is not noise. It tracks how much adversarial review each app's
-tests have actually had, and the two lowest scores are the two newest apps
-in the repo: `mern-shop`'s security middleware has been iterated on the
+tests have actually had, and the two lowest scores were the two newest apps
+at the time of the audit (five apps have shipped since, unscored):
+`mern-shop`'s security middleware has been iterated on the
 longest and against the most deliberate attack scenarios (auth bypass, rate
 limit evasion, fraud scoring edge cases), while `sql-ledger`'s outbox and
 migration runner are the most recently written and had the fewest rounds of

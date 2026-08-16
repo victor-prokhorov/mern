@@ -12,7 +12,7 @@ toy skips, and further reading.
 
 | App | What it is |
 |---|---|
-| [mern-shop](mern-shop/) | Minimal ecommerce: catalogue, server-side cart, login, orders. Raw HTML from React, no CSS. Plus four security topics. |
+| [mern-shop](mern-shop/) | Minimal ecommerce: catalogue, server-side cart, login, orders. Raw HTML from React, no CSS. Plus six guides beside the code. |
 | [mern-tickets](mern-tickets/) | Support-ticket API. Workflow state machine, authorization, moderation, throttling. Server only. |
 | [mern-movies](mern-movies/) | Movie API. Recommendations and follow/notify fan-out. Server only. |
 | [sql-ledger](sql-ledger/) | Postgres double-entry ledger. Transactional outbox, zero-downtime expand-contract migrations, keyset pagination. Server only. |
@@ -133,8 +133,7 @@ Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
 `sql-ledger` 5002, `sql-jobs` 5004, `sql-scheduler` 5005, `mern-cache` 5006,
 `sql-replica` 5007, `sql-saga` 5008, `mern-shop`'s Vite client 5173. Each app's
 `.env.example` ships its own distinct default, so any two (or all nine) can run
-side by side without an `EADDRINUSE` —
-which several guides' "Try it" sections already assumed when they point at each other.
+side by side without an `EADDRINUSE`.
 
 `mern-shop` also has a client:
 
@@ -163,16 +162,18 @@ npm run dev
 
 ```bash
 cd <app>/server   # or just cd sql-ledger
-npm test        # drops and rebuilds its own <app>-test database on every test
+npm test        # drops and rebuilds its own test database on every run
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
 513 tests across nine apps (125 shop, 144 tickets, 58 movies, 14 cache,
 46 ledger, 26 jobs, 63 scheduler, 17 replica, 20 saga), plus a mutation-testing
 tool under `tools/mutation` that audits how much those tests actually prove.
-The MERN suites need a reachable MongoDB; `sql-ledger`, `sql-jobs`,
-`sql-scheduler`, `sql-replica` and `sql-saga` need a reachable Postgres and each creates its own
-`<app>_test` database on first run.
+The MERN suites need a reachable MongoDB and use `<app>-test` databases
+(`mern-shop-test`, ...); `sql-ledger`, `sql-jobs`, `sql-scheduler`,
+`sql-replica` and `sql-saga` need a reachable Postgres and each creates a
+short-name test database on first run (`ledger_test`, `jobs_test`,
+`scheduler_test`, `replica_test`, `saga_test`).
 
 ## Mutation testing
 
@@ -189,7 +190,9 @@ node cli.js --app mern-shop --files src/middleware/auth.js --max 20 --seed demo
 
 See [tools/mutation/README.md](tools/mutation/README.md) for how it works and
 what running it against mern-shop, mern-tickets, mern-movies, and sql-ledger
-found — that audit predates `sql-jobs` and has not been run against it.
+found. That audit predates the five newer apps, and the runner registers only
+the four audited ones (`tools/mutation/apps.js`) — extending the registry is
+part of auditing the rest.
 
 ## House rules
 
