@@ -20,7 +20,7 @@ toy skips, and further reading.
 
 ## Topics
 
-Twenty-two guides, each beside the code it describes.
+Twenty-three guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
 
 | Topic | Where |
 |---|---|
