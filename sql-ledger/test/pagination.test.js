@@ -25,7 +25,7 @@ describe('pagination', () => {
   it('demonstrates that offset pagination duplicates a row when a new row is inserted between page fetches, while keyset pagination does not', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
-    const r1 = await makeTransfer(alice.id, bob.id, 'ins-1')
+    await makeTransfer(alice.id, bob.id, 'ins-1')
     const r2 = await makeTransfer(alice.id, bob.id, 'ins-2')
     const r3 = await makeTransfer(alice.id, bob.id, 'ins-3')
     const r4 = await makeTransfer(alice.id, bob.id, 'ins-4')
@@ -52,11 +52,11 @@ describe('pagination', () => {
     const bob = await createAccount({ name: 'bob' })
     const r1 = await makeTransfer(alice.id, bob.id, 'del-1')
     const r2 = await makeTransfer(alice.id, bob.id, 'del-2')
-    const r3 = await makeTransfer(alice.id, bob.id, 'del-3')
+    await makeTransfer(alice.id, bob.id, 'del-3')
     const r4 = await makeTransfer(alice.id, bob.id, 'del-4')
 
     const keysetPage1 = await keysetPage({ limit: 2 })
-    const offsetPage1 = await offsetPage({ limit: 2, offset: 0 })
+    await offsetPage({ limit: 2, offset: 0 })
     await pool.query('DELETE FROM entries WHERE transfer_id = $1', [r4.id])
     await pool.query('DELETE FROM transfers WHERE id = $1', [r4.id])
     const keysetPage2 = await keysetPage({ limit: 2, cursor: keysetPage1.body.nextCursor })
