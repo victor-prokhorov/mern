@@ -112,6 +112,20 @@ describe('queue', () => {
       expect(current.last_error).to.include('upstream responded 500')
       expect(current.last_error).to.include('lease expired')
     })
+
+    it('reschedules a reaped job with the same full-jitter backoff as a normal failure instead of making it instantly re-claimable', async () => {
+      const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool, { random: () => 1 })
+      const claimed = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
+
+      expect(reaped.map((r) => r.id)).to.deep.equal([job.id])
+      expect(claimed).to.deep.equal([])
+      const { rows } = await pool.query('SELECT run_at > now() AS deferred FROM jobs WHERE id = $1', [job.id])
+      expect(rows[0].deferred).to.equal(true)
+    })
   })
 
   describe('heartbeat', () => {
