@@ -195,6 +195,80 @@ describe('queue', () => {
     })
   })
 
+  describe('permanent delivery failure', () => {
+    it('a delivery that fails on its final attempt marks the message failed, not stuck sending forever', async () => {
+      const { deliverMessage } = await import('../src/services/messages.js')
+      const { pool: appPool } = await import('../src/db.js')
+      const http = await import('node:http')
+      const server = http.createServer((req, res) => {
+        res.writeHead(500)
+        res.end()
+      })
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const { port } = server.address()
+      const accountRow = await appPool.query("INSERT INTO accounts (name) VALUES ('a') RETURNING id")
+      const accountId = accountRow.rows[0].id
+      const messageRow = await appPool.query(
+        "INSERT INTO messages (account_id, recipient, body) VALUES ($1, 'r', 'b') RETURNING id",
+        [accountId]
+      )
+      const messageId = messageRow.rows[0].id
+      const job = {
+        attempts: 4,
+        max_attempts: 5,
+        payload: { messageId, recipient: 'r', body: 'b', upstreamUrl: `http://127.0.0.1:${port}/deliver` }
+      }
+
+      let threw = false
+      try {
+        await deliverMessage(job)
+      } catch (err) {
+        threw = true
+      }
+
+      server.close()
+      expect(threw).to.equal(true)
+      const { rows } = await appPool.query('SELECT status FROM messages WHERE id = $1', [messageId])
+      expect(rows[0].status).to.equal('failed')
+    })
+
+    it('a delivery that fails with retries left leaves the message sending, not failed', async () => {
+      const { deliverMessage } = await import('../src/services/messages.js')
+      const { pool: appPool } = await import('../src/db.js')
+      const http = await import('node:http')
+      const server = http.createServer((req, res) => {
+        res.writeHead(500)
+        res.end()
+      })
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const { port } = server.address()
+      const accountRow = await appPool.query("INSERT INTO accounts (name) VALUES ('a') RETURNING id")
+      const accountId = accountRow.rows[0].id
+      const messageRow = await appPool.query(
+        "INSERT INTO messages (account_id, recipient, body) VALUES ($1, 'r', 'b') RETURNING id",
+        [accountId]
+      )
+      const messageId = messageRow.rows[0].id
+      const job = {
+        attempts: 0,
+        max_attempts: 5,
+        payload: { messageId, recipient: 'r', body: 'b', upstreamUrl: `http://127.0.0.1:${port}/deliver` }
+      }
+
+      let threw = false
+      try {
+        await deliverMessage(job)
+      } catch (err) {
+        threw = true
+      }
+
+      server.close()
+      expect(threw).to.equal(true)
+      const { rows } = await appPool.query('SELECT status FROM messages WHERE id = $1', [messageId])
+      expect(rows[0].status).to.equal('sending')
+    })
+  })
+
   describe('fairness', () => {
     it('one accounts backlog does not starve another accounts job', async () => {
       for (let i = 0; i < 10; i++) await jobsRepo.enqueue(pool, { kind: 'send_message', payload: { accountId: '1' } })
