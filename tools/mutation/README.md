@@ -18,10 +18,11 @@ makes that repeatable instead of artisanal.
 
 ## How it works here
 
-1. `cli.js:22` (`main`) parses `--app`, `--files`, `--max`, `--seed`, `--out`
-   and `--timeout`, resolves the app to a root directory and test command via
-   `apps.js:7` (`APPS`), and either uses the given `--files` list or walks the
-   app's `src/` with `discover.js:6` (`discoverSourceFiles`), which skips
+1. `cli.js:22` (`main`) parses `--app`, `--files`, `--max`, `--seed`, `--out`,
+   `--timeout` and `--src` (the source root to walk when no `--files` list is
+   given, default `src`), resolves the app to a root directory and test command
+   via `apps.js:7` (`APPS`), and either uses the given `--files` list or walks
+   the app's source root with `discover.js:6` (`discoverSourceFiles`), which skips
    `node_modules`, `test`/`tests` directories and anything ending in
    `.test.js`.
 2. `run.js:88` (`assertCleanGitState`, called from `runMutationTesting`) shells
@@ -214,7 +215,7 @@ makes that repeatable instead of artisanal.
   of depth-counting.
 - **No coverage-guided test selection.** Every mutant runs the app's entire
   suite. There is no map from "this line" to "these tests," so a change deep
-  in `fraud/signals.js` reruns all 125 of `mern-shop`'s tests, not just the
+  in `fraud/signals.js` reruns all 131 of `mern-shop`'s tests, not just the
   handful that actually exercise it.
 - **No incremental mode.** Nothing here remembers that a mutant survived
   last week and the covering test hasn't changed since; every invocation
