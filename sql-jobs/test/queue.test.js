@@ -21,8 +21,9 @@ describe('queue', () => {
   })
 
   describe('claiming', () => {
-    it('two workers claiming concurrently never get the same job', async () => {
+    it('two workers claiming concurrently partition the ready rows, not just avoid duplicates', async () => {
       for (let i = 0; i < 20; i++) await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
+      await Promise.all([pool.query('SELECT 1'), pool.query('SELECT 1')])
 
       const [batchA, batchB] = await Promise.all([
         jobsRepo.claimJobs(pool, { workerId: 'a', limit: 10, leaseMs: 5000 }),
@@ -31,7 +32,8 @@ describe('queue', () => {
 
       const idsA = batchA.map((j) => j.id)
       const idsB = batchB.map((j) => j.id)
-      expect(idsA.length + idsB.length).to.equal(20)
+      expect(idsA.length).to.equal(10)
+      expect(idsB.length).to.equal(10)
       expect(idsA.some((id) => idsB.includes(id))).to.equal(false)
     })
 
