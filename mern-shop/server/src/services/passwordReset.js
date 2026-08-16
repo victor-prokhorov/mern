@@ -34,9 +34,9 @@ export async function resetPassword(rawToken, password) {
   const now = new Date()
   const record = await passwordResets.consumeToken(tokenHash, now)
   if (!record) throw new BadRequestError(RESET_TOKEN_INVALID)
+  await sessions.revokeAllForUser(record.user, now)
   const passwordHash = await bcrypt.hash(password, 10)
   await users.updatePasswordHash(record.user, passwordHash)
-  await sessions.revokeAllForUser(record.user, now)
   await passwordResets.invalidateOthersForUser(record.user, record._id)
   return { message: 'password has been reset' }
 }
