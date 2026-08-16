@@ -5,28 +5,36 @@ export function createCache(options) {
   const negativeTtlMs = options.negativeTtlMs ?? options.ttlMs
   const coalesce = options.coalesce ?? true
   const inflight = new Map()
-  async function load(key, now) {
+  async function load(key, now, flight) {
     const value = await loader(key)
-    if (value == null) store.set(key, null, negativeTtlMs, now, true)
-    else store.set(key, value, ttlMs, now, false)
+    if (!flight.invalidated) {
+      if (value == null) store.set(key, null, negativeTtlMs, now, true)
+      else store.set(key, value, ttlMs, now, false)
+    }
     return { value, source: 'origin' }
   }
   async function get(key, now = Date.now()) {
     const entry = store.get(key, now)
     if (entry) return { value: entry.value, source: entry.negative ? 'negative' : 'cache' }
     if (coalesce && inflight.has(key)) {
-      const shared = await inflight.get(key)
+      const shared = await inflight.get(key).promise
       return { value: shared.value, source: 'coalesced' }
     }
-    const pending = load(key, now)
-    if (coalesce) inflight.set(key, pending)
+    const flight = { invalidated: false }
+    const record = { promise: load(key, now, flight), flight }
+    if (coalesce) inflight.set(key, record)
     try {
-      return await pending
+      return await record.promise
     } finally {
-      if (coalesce) inflight.delete(key)
+      if (coalesce && inflight.get(key) === record) inflight.delete(key)
     }
   }
   function invalidate(key) {
+    const record = inflight.get(key)
+    if (record) {
+      record.flight.invalidated = true
+      inflight.delete(key)
+    }
     return store.invalidate(key)
   }
   function size() {
