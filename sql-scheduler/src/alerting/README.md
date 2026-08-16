@@ -66,7 +66,14 @@ test (`test/evaluator.test.js`) opens two raw pool clients, has one `BEGIN`
 and insert without committing, starts the second's guarded insert (which
 blocks on the first), commits the first, and only then awaits the second —
 forcing the actual conflict deterministically and asserting the loser
-resolves to `null` rather than rejecting.
+resolves to `null` rather than rejecting. The general lesson is worth
+stating plainly, because it is easy to write the wrong test by accident and
+have it pass: **a concurrency test that does not force the actual
+interleaving proves only that the code runs twice, not that it races
+correctly** — two independent async calls racing against a fast local
+database will often just happen to run one after the other, and a test
+built on that hope is exactly as broken as the bug it was meant to catch,
+just quieter about it.
 
 **Hysteresis, in both directions.** A rule's `for_evaluations` is how many
 *consecutive* breaches are required before an alert actually starts `firing`
@@ -258,6 +265,27 @@ regression a previous pass introduced and this one closes.
   ship the external watcher itself.
 - Multiple notification channels beyond a single webhook per rule, and any
   channel-specific formatting (Slack blocks, PagerDuty's event schema, etc).
+- **Delivery concurrency.** `deliverWithRetry` is awaited serially, one
+  notification at a time, inside `evaluateAllRules`'s sweep — a dead
+  upstream stalls the whole sweep for roughly ten seconds per firing
+  notification (five attempts, a two-second timeout each, plus backoff
+  between them), and a rule with several simultaneously firing subjects
+  pays that cost once per notification, back to back. This is bounded today
+  only because `evaluateRulesTick`'s advisory lock makes an overlapping
+  sweep from a second instance a no-op rather than a pile-up — an accidental
+  protection, since the lock exists for exactly-once evaluation, not for
+  delivery throughput, not a designed limit on concurrent delivery. This
+  repo has now been bitten twice by exactly this shape of mistake — a
+  missing `SAVEPOINT` around a guarded insert quietly depended on to keep a
+  transaction usable after a conflict, first in the scheduler's
+  `runsRepo.createGuarded` and then in `alertsRepo.createGuarded` above —
+  which is the standing reason to name this one explicitly rather than let
+  it stay implicit until something removes the lock and the ten-second
+  stall becomes an incident. Naming the actual fix rather than tuning
+  around the symptom: delivery
+  belongs on a queue with its own workers, so N notifications deliver
+  concurrently and one dead upstream can't stall the rest — exactly the
+  `sql-jobs` app's job, not a `Promise.all` bolted onto this sweep.
 
 ## Try it
 
