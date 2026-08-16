@@ -92,6 +92,22 @@ describe('ledger', () => {
     expect(commitError.message).to.include('do not sum to zero')
   })
 
+  it('completes 20 concurrent opposing transfer pairs without a deadlock surfacing as 500', async function () {
+    this.timeout(60000)
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+
+    const requests = []
+    for (let i = 0; i < 20; i += 1) {
+      requests.push(httpAgent.post('/api/transfers').send({ reference: `dl-ab-${i}`, fromAccountId: alice.id, toAccountId: bob.id, amountMinor: 10 }))
+      requests.push(httpAgent.post('/api/transfers').send({ reference: `dl-ba-${i}`, fromAccountId: bob.id, toAccountId: alice.id, amountMinor: 10 }))
+    }
+    const responses = await Promise.all(requests)
+
+    const statuses = responses.map((res) => res.status)
+    expect(statuses).to.deep.equal(statuses.map(() => 201))
+  })
+
   it('rejects an amountMinor beyond the safely representable integer range', async () => {
     const from = await createAccount({ name: 'alice' })
     const to = await createAccount({ name: 'bob' })
