@@ -63,6 +63,7 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
 - Nothing feeds a denied or reviewed order back into the signals as state: a customer whose order was just denied can retry immediately and be scored from scratch, since `deny` throws before an `Order` is written and `ORDER_VELOCITY` only counts written orders. A real system counts *attempts*, not just successes.
 - No IP, device, or payment-instrument signals (new device, mismatched billing/shipping geography, card BIN country, proxy/VPN detection) — this demo only has six of many signals a production system would run.
 - No per-customer or per-merchant-segment threshold overrides — `THRESHOLDS` is global.
+- `HIGH_VALUE` recomputes the order total from the items it is handed (`fraud/signals.js:21`) instead of receiving the `total` `services/orders.js:25` already computed in the same request — two definitions of "the order's value" on one path, the exact drift pattern the "reuse existing identity signals" bullet above warns about; today both reduce over the same `{ price, qty }` array and cannot disagree, but the day one of them learns about discounts, tax, or shipping, the scorer starts judging a different number than the order stores.
 - No machine-learning layer at all, and no historical data pipeline to eventually train one.
 - No monitoring or alerting on how often each signal fires, which in production is how you notice a rule has gone stale or an attacker has started routing around it.
 
