@@ -18,7 +18,7 @@ npm run dev
 ```
 
 API on `http://localhost:5001`. `mern-movies` defaults to `5003`, so the two
-can run side by side on their default `.env`s. `npm run seed` creates one admin, two agents, three reporters (`ada@tickets.test` / `gale@tickets.test` / `remy@tickets.test` / `rae@tickets.test` / `sam@tickets.test` / `lee@tickets.test`, password `demo1234` for all) and five tickets spread across statuses.
+can run side by side on their default `.env`s. `npm run seed` creates six users — one admin (`ada@tickets.test`), two agents (`gale@tickets.test`, `remy@tickets.test`) and three reporters (`rae@tickets.test`, `sam@tickets.test`, `lee@tickets.test`), password `demo1234` for all — and five tickets spread across statuses.
 
 ## Tests
 

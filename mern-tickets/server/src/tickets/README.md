@@ -49,6 +49,7 @@ Every route under `/api/tickets` runs through `identify` (`src/middleware/identi
 - Ticket reassignment queues, round robin, or load-based routing — assignment is a direct, single write.
 - Pagination on `GET /api/tickets` — it returns every match. `GET /api/tickets/:id` likewise returns every comment and every event with no limit, which is fine for five seeded tickets and not fine for a two-year-old ticket.
 - Editing or deleting a comment once posted.
+- Tying a `commented` event to its comment. The event stores `from: null, to: null` and no comment id (`src/services/tickets.js:125`), so the audit log records *that* someone commented but not *which* comment — joining the log back to the content it audits takes a guess by actor and timestamp, not a key.
 
 ## Try it
 
