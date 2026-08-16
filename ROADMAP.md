@@ -3,7 +3,7 @@
 Three things, in order: (1) the master concept checklist — the full list of
 what a senior/staff backend engineer and architect should master, grouped by
 area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
-unmarked if it is a real gap not in this repo yet; (2) the index of the 26
+unmarked if it is a real gap not in this repo yet; (2) the index of the 27
 guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
 in priority order. Scan section 1 to pick a weakness; jump to section 2 for
 anything already built.
@@ -51,11 +51,11 @@ spot rather than a thing that doesn't matter.
 - Backpressure vs load shedding `[covered]` (concept, ([throttle](mern-tickets/server/src/throttle/README.md)))
 
 ### Caching and performance
-- Cache-aside, write-through, write-behind `[roadmap]` (must-have #1)
-- Cache eviction policies: LRU, LFU, FIFO, ARC, TTL, and size/memory pressure `[roadmap]` (must-have #1)
-- TTL vs invalidation, negative caching, stale-while-revalidate `[roadmap]` (must-have #1)
-- Cache stampede / thundering herd, single-flight, early expiry `[roadmap]` (must-have #1)
-- HTTP caching: Cache-Control, ETag, 304, CDN edge `[roadmap]` (must-have #1)
+- Cache-aside, write-through, write-behind `[covered]` (cache-aside built; write-through/write-behind concept, ([caching](mern-cache/server/src/cache/README.md)))
+- Cache eviction policies: LRU, LFU, FIFO, ARC, TTL, and size/memory pressure `[covered]` (TTL reclaim only; LRU/LFU/ARC discussed as skipped, ([caching](mern-cache/server/src/cache/README.md)))
+- TTL vs invalidation, negative caching, stale-while-revalidate `[covered]` (TTL, invalidation, negative caching built; stale-while-revalidate concept, ([caching](mern-cache/server/src/cache/README.md)))
+- Cache stampede / thundering herd, single-flight, early expiry `[covered]` (single-flight built; probabilistic early expiry concept, ([caching](mern-cache/server/src/cache/README.md)))
+- HTTP caching: Cache-Control, ETag, 304, CDN edge `[covered]` (concept, in the caching guide's prose and its ETag contrast with ([concurrency](mern-tickets/server/src/concurrency/README.md)), ([caching](mern-cache/server/src/cache/README.md)))
 - N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #13)
 - Connection pooling, prepared statements — concept only
 - Query plans and index-driven performance `[roadmap]` (should-have #8)
@@ -198,10 +198,11 @@ spot rather than a thing that doesn't matter.
 24. [Exactly-once ticking, catch-up, drift](sql-scheduler/src/scheduler/README.md) — advisory lock for liveness, unique constraint for safety, catch-up policies (all/skip/none), grid anchoring against drift, deterministic jitter
 25. [Alert dedup, hysteresis, cooldown](sql-scheduler/src/alerting/README.md) — pending/firing/resolved lifecycle, for_evaluations, consecutive clears, cooldown renotification, liveness vs lag rules, forcing real races in tests
 26. [Mutation testing](tools/mutation/README.md) — mutation operators, kill vs survivor, why coverage lies, seeded sampling, resumable runs
+27. [Caching](mern-cache/server/src/cache/README.md) — cache-aside vs write-through/write-behind, TTL as a staleness bound vs invalidation-on-write, negative caching, the cache stampede and single-flight coalescing, HTTP caching (Cache-Control/ETag/304/CDN) and how its ETag differs from the write-side ETag, per-process vs distributed limits
 
 ## Roadmap — must-have
 
-1. **Caching** — cache-aside vs write-through, TTL vs explicit invalidation, cache stampede protection (request coalescing, locks, probabilistic early expiry), HTTP caching (`Cache-Control`, ETag-for-caching, 304s), CDN layer, negative caching, stale-while-revalidate
+1. **Caching** — **built**, see [`mern-cache/server/src/cache/README.md`](mern-cache/server/src/cache/README.md): cache-aside vs write-through, TTL vs explicit invalidation, cache stampede protection (request coalescing, locks, probabilistic early expiry), HTTP caching (`Cache-Control`, ETag-for-caching, 304s), CDN layer, negative caching, stale-while-revalidate
 2. **Replication and consistency** — read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
 3. **Sagas / distributed transactions** — compensation, orchestration vs choreography, saga state machines, pivot transactions, why two-phase commit is avoided, building on outbox + queue
 4. **Feature flags and deploy strategies** — percentage rollout, targeting, kill switches, flag lifecycle and cleanup debt, blue-green and canary deploys, flags as expand-contract for behavior
