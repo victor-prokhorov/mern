@@ -2,11 +2,10 @@ import crypto from 'node:crypto'
 import * as blocks from '../services/blocks.js'
 import { UnauthorizedError } from '../middleware/error.js'
 
-function safeEqual(a, b) {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return crypto.timingSafeEqual(bufA, bufB)
+export function safeEqual(a, b) {
+  const digestA = crypto.createHash('sha256').update(String(a)).digest()
+  const digestB = crypto.createHash('sha256').update(String(b)).digest()
+  return crypto.timingSafeEqual(digestA, digestB)
 }
 
 function requireAdmin(req) {
