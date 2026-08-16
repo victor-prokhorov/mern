@@ -282,6 +282,29 @@ describe('queue', () => {
       const { rows } = await appPool.query('SELECT status FROM messages WHERE id = $1', [messageId])
       expect(rows[0].status).to.equal('sending')
     })
+
+    it('a job dead-lettered by the reaper on its final attempt marks the message failed, not stuck sending forever', async () => {
+      const messagesService = await import('../src/services/messages.js')
+      const messagesRepo = await import('../src/repositories/messages.js')
+      registerHandler('send_message', messagesService.deliverMessage, { onDead: messagesService.markDeliveryFailed })
+      const accountRow = await pool.query("INSERT INTO accounts (name) VALUES ('a') RETURNING id")
+      const accountId = accountRow.rows[0].id
+      const messageRow = await pool.query(
+        "INSERT INTO messages (account_id, recipient, body) VALUES ($1, 'r', 'b') RETURNING id",
+        [accountId]
+      )
+      const messageId = messageRow.rows[0].id
+      await jobsRepo.enqueue(pool, { kind: 'send_message', payload: { messageId }, maxAttempts: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await messagesRepo.beginSending(pool, messageId)
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool)
+
+      expect(reaped.map((r) => r.status)).to.deep.equal(['dead'])
+      const { rows } = await pool.query('SELECT status FROM messages WHERE id = $1', [messageId])
+      expect(rows[0].status).to.equal('failed')
+    })
   })
 
   describe('fairness', () => {
