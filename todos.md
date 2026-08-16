@@ -1,7 +1,129 @@
 # Topic index and roadmap
 
-A dictionary of every concept in this repo (pick one, read its guide, run its
-"Try it"), followed by the roadmap of topics not yet built, in priority order.
+Three things, in order: (1) the master concept checklist — the full list of
+what a senior/staff backend engineer and architect should master, grouped by
+area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
+unmarked if it is a real gap not in this repo yet; (2) the index of the 26
+guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
+in priority order. Scan section 1 to pick a weakness; jump to section 2 for
+anything already built.
+
+## Master concept checklist — what to master
+
+The point of this section is coverage honesty: it lists the field, not just
+the parts this repo happens to teach, so an unmarked line is a known blind
+spot rather than a thing that doesn't matter.
+
+### Data storage and modelling
+- Relational vs document vs key-value vs wide-column vs graph — picking by workload `[covered]` ([ledger](sql-ledger/src/ledger/README.md), [domain modelling](mern-movies/server/src/movies/README.md))
+- Normalization vs denormalization, embedding vs referencing `[covered]` ([domain modelling](mern-movies/server/src/movies/README.md))
+- Money and exact numerics (minor units, BIGINT not float, ISO 4217) `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
+- Indexes: composite, covering, partial, unique; index selection and `EXPLAIN` `[roadmap]` (should-have #8) — partial today via ([pagination](sql-ledger/src/pagination/README.md))
+- Schema migrations: expand-contract, zero-downtime DDL, backfills `[covered]` ([migrations](sql-ledger/src/migrations/README.md))
+- Pagination: keyset vs offset, opaque cursors `[covered]` ([pagination](sql-ledger/src/pagination/README.md))
+- Full-text search, relevance ranking, `tsvector` `[roadmap]` (should-have #8)
+- Time and timezones: instants vs wall-clock, DST, TIMESTAMPTZ, IANA tz `[covered]` ([cadence](sql-scheduler/src/cadence/README.md))
+- Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #13)
+- Partitioning and sharding (by range, hash, tenant) — not built
+- Data retention, archival, TTL/reaping `[covered]` (idempotency/rate-limit TTL, outbox growth notes)
+
+### Consistency, transactions, concurrency
+- ACID, isolation levels (READ COMMITTED, REPEATABLE READ, SERIALIZABLE) `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
+- Lost update vs write skew vs phantoms `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
+- Optimistic vs pessimistic locking, compare-and-swap, ETag/If-Match `[covered]` ([concurrency](mern-tickets/server/src/concurrency/README.md))
+- Row locking, `FOR UPDATE`, `SKIP LOCKED`, advisory locks `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [migrations](sql-ledger/src/migrations/README.md))
+- Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
+- CAP / PACELC, replication lag, read-your-writes, monotonic reads `[roadmap]` (must-have #2)
+- CRDTs and convergent merge (the step past whole-document rejection) `[covered]` (concept only, ([concurrency](mern-tickets/server/src/concurrency/README.md)))
+- Distributed transactions, two-phase commit, and why they are avoided `[roadmap]` (must-have #3)
+- Sagas and compensation (orchestration vs choreography) `[roadmap]` (must-have #3)
+- Idempotency: client keys, natural keys, unique-index dedupe `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [ledger](sql-ledger/src/ledger/README.md), [fan-out](mern-movies/server/src/notifications/README.md))
+
+### Messaging and async work
+- Queues: leases, reapers, retries, backoff+jitter, dead-letter, fairness `[covered]` ([queue](sql-jobs/src/queue/README.md))
+- Transactional outbox, polling relay vs CDC, inbox pattern `[covered]` ([outbox](sql-ledger/src/outbox/README.md))
+- Delivery semantics: at-least-once, at-most-once, effectively-once `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [fan-out](mern-movies/server/src/notifications/README.md), [queue](sql-jobs/src/queue/README.md))
+- Fan-out on write vs on read, the celebrity problem `[covered]` ([fan-out](mern-movies/server/src/notifications/README.md))
+- Ordering guarantees, partitions, consumer groups — concept only (queue README)
+- Event schema evolution, upcasting, schema registry `[roadmap]` (should-have #9)
+- Scheduling: cron vs polling ticks, catch-up, drift, exactly-once fire `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md), [cadence](sql-scheduler/src/cadence/README.md))
+- Backpressure vs load shedding `[covered]` (concept, ([throttle](mern-tickets/server/src/throttle/README.md)))
+
+### Caching and performance
+- Cache-aside, write-through, write-behind `[roadmap]` (must-have #1)
+- TTL vs invalidation, negative caching, stale-while-revalidate `[roadmap]` (must-have #1)
+- Cache stampede / thundering herd, single-flight, early expiry `[roadmap]` (must-have #1)
+- HTTP caching: Cache-Control, ETag, 304, CDN edge `[roadmap]` (must-have #1)
+- N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #10)
+- Connection pooling, prepared statements — concept only
+- Query plans and index-driven performance `[roadmap]` (should-have #8)
+
+### API design
+- REST semantics, idempotent methods, status codes (409/412/428/429) `[covered]` ([concurrency](mern-tickets/server/src/concurrency/README.md), [throttle](mern-tickets/server/src/throttle/README.md))
+- Versioning and breaking-change policy, consumer contract tests `[roadmap]` (should-have #7)
+- Pagination contracts, opaque tokens (AIP-158) `[covered]` ([pagination](sql-ledger/src/pagination/README.md))
+- Rate-limit response contract (Retry-After, RateLimit headers) `[covered]` ([rate limiting](mern-shop/server/src/rateLimit/README.md), [throttle](mern-tickets/server/src/throttle/README.md))
+- Real-time: SSE, WebSockets, long polling `[roadmap]` (should-have #6)
+- GraphQL vs REST, query cost — concept only (throttle mentions Shopify cost model)
+
+### Authentication, authorization, security
+- Password storage (bcrypt/Argon2), NIST rules, reset flows `[covered]` ([password reset](mern-shop/server/src/passwordReset/README.md))
+- Sessions vs JWT, rotation, reuse detection, revocation, `kid` `[covered]` ([sessions](mern-shop/server/src/session/README.md))
+- OAuth2 / OIDC scope and grants `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)))
+- Authorization models: RBAC, ABAC, ReBAC, PDP/PEP `[covered]` ([policy](mern-tickets/server/src/policy/README.md))
+- Rate limiting and credential-stuffing defence `[covered]` ([rate limiting](mern-shop/server/src/rateLimit/README.md))
+- Blocklists, normalization, homoglyphs, enumeration oracles `[covered]` ([blocklist](mern-shop/server/src/blocklist/README.md))
+- Injection: SQL/NoSQL, XSS, CSRF, SSRF, prototype pollution `[roadmap]` (must-have #5)
+- Fraud scoring, reason codes, explainability, GDPR Art. 22 `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
+- Content moderation, keyword/allowlist, Unicode security `[covered]` ([moderation](mern-tickets/server/src/moderation/README.md))
+- Secrets management, key rotation `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)) + AWS/GCP sections)
+- Multi-tenancy isolation `[roadmap]` (nice-to-have #12)
+- Audit logs vs event sourcing, tamper-evidence `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md), [ledger](sql-ledger/src/ledger/README.md))
+
+### Reliability and resilience
+- Timeouts (why every remote call needs one) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
+- Retries, exponential backoff, full jitter `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [alerting](sql-scheduler/src/alerting/README.md))
+- Circuit breakers (closed/open/half-open) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
+- Bulkheads, load shedding, hedged requests `[covered]` (concept, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)))
+- Graceful shutdown, connection draining `[covered]` ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md))
+- Fail-open vs fail-closed per domain `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
+- Cascading failure, thundering herd on recovery `[covered]` (concept across breaker/backoff guides)
+
+### Observability and operations
+- Structured logging, correlation ids, AsyncLocalStorage `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
+- Metrics: RED vs USE, cardinality, Prometheus exposition `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
+- Distributed tracing, spans, OpenTelemetry `[covered]` (concept, ([observability](mern-tickets/server/src/observability/README.md)))
+- Health checks: liveness vs readiness `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
+- Alerting: dedup, hysteresis, cooldown, liveness vs lag rules `[covered]` ([alerting](sql-scheduler/src/alerting/README.md))
+- SLOs, error budgets — concept only
+
+### Scaling and distribution
+- Horizontal vs vertical scaling, statelessness — concept only
+- Read replicas and replica routing `[roadmap]` (must-have #2)
+- Sharding / partitioning strategies — not built
+- Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md))
+- Per-process vs shared state (breaker, health) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
+- Consistent hashing — not built
+
+### Deployment and release
+- Blue-green, canary, rolling deploys `[roadmap]` (must-have #4)
+- Feature flags, targeting, kill switches, flag debt `[roadmap]` (must-have #4)
+- Backwards-compatible deploys (old+new code together) `[covered]` ([migrations](sql-ledger/src/migrations/README.md))
+- Infrastructure as code, immutable infra — not built
+
+### Testing and quality
+- Test doubles, dependency injection for testability `[covered]` (pattern throughout; injected clocks/stores)
+- Concurrency tests that force the real interleaving `[covered]` ([alerting](sql-scheduler/src/alerting/README.md), [scheduler](sql-scheduler/src/scheduler/README.md))
+- Mutation testing (coverage lies) `[covered]` ([mutation](tools/mutation/README.md))
+- Contract tests, property-based testing — concept only / not built
+
+### Domain and architecture
+- Layered architecture, dependency direction `[covered]` (enforced repo-wide; sql `check-layers.js`)
+- State machines vs scattered conditionals `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md))
+- Rules engines vs ML, explainable decisions `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
+- Recommendations: content vs collaborative filtering, cold start `[covered]` ([recommendations](mern-movies/server/src/recommendations/README.md))
+- Hooks/pipelines vs middleware vs events `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
+- Node runtime internals: event loop, workers, stream backpressure `[roadmap]` (nice-to-have #11)
 
 ## Existing guides — the index
 
