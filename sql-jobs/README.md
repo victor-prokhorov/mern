@@ -50,7 +50,7 @@ npm test        # bootstraps and truncates its own jobs_test database on every r
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-22 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `jobs_test` database created automatically on first run.
+28 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `jobs_test` database created automatically on first run.
 
 ## Topics and their READMEs
 
