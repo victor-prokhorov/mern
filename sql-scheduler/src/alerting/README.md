@@ -40,7 +40,7 @@ one phrased differently.
 
 **Alert lifecycle, not events.** `alerts.state` is `pending → firing →
 resolved`. `evaluate(pool, rule, subject, breached)`
-(`src/alerting/lifecycle.js:74-107`) looks up any existing non-resolved alert
+(`src/alerting/lifecycle.js:108-119`) looks up any existing non-resolved alert
 for `(rule.id, subject)` (`alertsRepo.findOpen`, filtering `state <> 'resolved'`)
 before deciding anything. If a breach comes in and one already exists, that
 row is **updated** — `occurrences` increments, `consecutive_breaches`
@@ -50,18 +50,29 @@ scheduler's own lock/constraint pattern: the app checks `findOpen` first
 (cheap, correct in the overwhelmingly common single-evaluator case), and the
 database backs it with `alerts_one_open_idx`
 (`src/migrations/007_alerts_widen_open_index.sql`), a unique index on
-`(rule_id, subject) WHERE state <> 'resolved'`. Deliberately breaking the
-`findOpen` check while building this (forcing `evaluate` to always attempt a
-fresh insert) didn't produce a duplicate row — it produced an immediate
-`duplicate key value violates unique constraint "alerts_one_open_idx"`,
-proving the index is a real backstop and not decoration copied from the
-scheduler's `runs` table out of habit.
+`(rule_id, subject) WHERE state <> 'resolved'`. The narrow window where two
+evaluators can both see "no existing alert" and both attempt to create the
+first one is closed with the same `SAVEPOINT`/`ROLLBACK TO SAVEPOINT` pattern
+the scheduler's `runsRepo.createGuarded` uses:
+`alertsRepo.createGuarded` (`onFirstBreach`, `src/alerting/lifecycle.js:75-106`)
+lets the loser roll back just its own failed insert, re-fetch the winner's
+now-committed row, and fold into the normal `onBreach` update path instead of
+throwing a `23505` out of `evaluate`. This was proven with a genuinely forced
+race, not `Promise.all` of two independent `evaluate()` calls — that version
+passed with no fix at all, because a fast local Postgres often finishes the
+first transaction's `findOpen`-then-insert before the second transaction's
+own `findOpen` even runs, which would have been a vacuous test. The real
+test (`test/evaluator.test.js`) opens two raw pool clients, has one `BEGIN`
+and insert without committing, starts the second's guarded insert (which
+blocks on the first), commits the first, and only then awaits the second —
+forcing the actual conflict deterministically and asserting the loser
+resolves to `null` rather than rejecting.
 
 **Hysteresis, in both directions.** A rule's `for_evaluations` is how many
 *consecutive* breaches are required before an alert actually starts `firing`
 (and notifies) — below that count it sits in `pending`, invisible to anyone
 downstream, tracked only so the count can accumulate. Critically, a single
-clear resets the streak: `onClear` (`src/alerting/lifecycle.js:50-72`)
+clear resets the streak: `onClear` (`src/alerting/lifecycle.js:51-73`)
 deletes a `pending` alert outright the moment a clear arrives, so a condition
 that breaches twice, clears once, then breaches twice more has to reach
 `for_evaluations` fresh — it never "banks" partial progress across a clear.
@@ -79,7 +90,7 @@ test's *expectations*, not the code, needed fixing: proof the test was
 actually checking the hysteresis count rather than passing by coincidence.
 
 **Cooldown and renotification.** A `firing` alert renotifies only if
-`now - last_notified_at >= cooldown_seconds` (`src/alerting/lifecycle.js:38`);
+`now - last_notified_at >= cooldown_seconds` (`src/alerting/lifecycle.js:39`);
 otherwise the alert's counters still update (so `occurrences` stays accurate)
 but no notification row is created. Forcing this check to always pass while
 building the feature turned "cooldown suppresses renotification" red
@@ -105,51 +116,66 @@ requests actually land on the test server, and the notification ends up
 `parked` with `attempts: 3` — and a second test against a healthy server on
 the same pattern confirms the success path marks `delivered`.
 
-## Retry belongs here; a second job queue does not
-
-`deliverWithRetry`'s loop is a small, local, single-purpose retry — bounded
-attempts, backoff, one terminal `parked` state — built because this app is
-allowed exactly this much delivery machinery for its own webhook calls. It is
-deliberately *not* a general-purpose reliable-execution system: no lease, no
-reaper reclaiming a delivery some dead process abandoned mid-attempt, no
-fairness across notifications, no separate dead-letter table. If any of that
-ever became necessary — many channels, delivery volume worth sharding, a
-need to inspect and manually replay parked notifications at scale — that is
-exactly the `sql-jobs` app's problem to own, not a reason to grow a second
-queue inside this one.
-
-## The trap: an alerting system that depends on what it's watching
-
-If the alert evaluator itself runs as a scheduled job inside the same
-process, on the same database, using the same tick mechanism as everything
-it's supposed to be watching, then the exact failure this system exists to
-catch — the scheduler stopped running — is also the failure that stops the
-alert about it from ever firing. An alerting system that shares its own
-fate with its dependency goes silent exactly when it's needed most, and
-silently is the worst way to fail: no alert firing looks identical, from the
-outside, to "everything is fine."
-
-The fix is not "make this app's evaluator more reliable" — that only pushes
-the same trap one level down (what watches the watcher?). The fix is a
-**dead man's switch**: an external, independent process that expects a
-heartbeat on a schedule and pages when the heartbeat itself goes missing,
-inverting the failure direction from "absence of a signal means nothing
-happened" to "absence of a signal is itself the alert." This is deliberately
-kept out of this app's code — a dead man's switch that lived inside the same
-process it was watching would just be the trap again, one layer deeper.
-In a real deployment this would be an external service (a third-party
-heartbeat/dead-man-switch product, or a completely separate always-on
-health-check process on different infrastructure) that this app's evaluator
-pings on success; missing pings, not application logic, are what escalate.
-The **out-of-band path** is the same idea generalised: at least one
-notification channel for the alert-that-the-alerter-is-down should not
-depend on anything this app owns — not the same database, not the same
-process, ideally not even the same cloud provider region — because every
-shared dependency is a way for "the alerter is down" and "the alerter can't
-tell anyone it's down" to have the same root cause.
+**The evaluator wires the rest together, and guards itself the same way the
+scheduler guards its tick.** `evaluateAllRules(pool)`
+(`src/alerting/evaluator.js`) walks every active rule against every schedule,
+isolating each `(rule, schedule)` pair in its own `try`/`catch` for the same
+reason the scheduler isolates each due schedule — one rule's metrics query
+blowing up shouldn't stop the rest of the sweep from evaluating. Whenever an
+`evaluate()` call actually produces a notification, `evaluateOne` calls
+`deliverWithRetry(pool, notification, { url: rule.channel, ... })` right
+after, once the alert's own transaction has already committed — delivery is
+a real network call, and holding a database transaction open across one
+would be exactly the kind of thing a timeout section warns against
+elsewhere in this repo. `evaluateRulesTick(pool)` wraps the whole sweep in
+`pg_try_advisory_lock` under a key distinct from the scheduler's tick lock,
+mirroring `tick()`'s own liveness guard — `src/index.js` calls
+`evaluateRulesTick`, never the raw `evaluateAllRules`, exactly as `index.js`
+calls `tick()` and never `runDueSchedules` directly. Before this wiring
+existed, a firing alert's notification sat at `state: 'pending', attempts: 0`
+forever — created, never delivered, never retried — which is a real
+regression a previous pass introduced and this one closes.
 
 ## The core concepts
 
+- **Retry belongs here; a second job queue does not.** `deliverWithRetry`'s
+  loop is a small, local, single-purpose retry — bounded attempts, backoff,
+  one terminal `parked` state — built because this app is allowed exactly
+  this much delivery machinery for its own webhook calls. It is deliberately
+  *not* a general-purpose reliable-execution system: no lease, no reaper
+  reclaiming a delivery some dead process abandoned mid-attempt, no fairness
+  across notifications, no separate dead-letter table. If any of that ever
+  became necessary — many channels, delivery volume worth sharding, a need
+  to inspect and manually replay parked notifications at scale — that is
+  exactly the `sql-jobs` app's problem to own, not a reason to grow a second
+  queue inside this one.
+- **The trap: an alerting system that depends on what it's watching.** If
+  the alert evaluator itself runs as a scheduled job inside the same
+  process, on the same database, using the same tick mechanism as everything
+  it's supposed to be watching, then the exact failure this system exists to
+  catch — the scheduler stopped running — is also the failure that stops the
+  alert about it from ever firing. An alerting system that shares its own
+  fate with its dependency goes silent exactly when it's needed most, and
+  silently is the worst way to fail: no alert firing looks identical, from
+  the outside, to "everything is fine." The fix is not "make this app's
+  evaluator more reliable" — that only pushes the same trap one level down
+  (what watches the watcher?). The fix is a **dead man's switch**: an
+  external, independent process that expects a heartbeat on a schedule and
+  pages when the heartbeat itself goes missing, inverting the failure
+  direction from "absence of a signal means nothing happened" to "absence
+  of a signal is itself the alert." This is deliberately kept out of this
+  app's code — a dead man's switch that lived inside the same process it
+  was watching would just be the trap again, one layer deeper. In a real
+  deployment this would be an external service (a third-party
+  heartbeat/dead-man-switch product, or a completely separate always-on
+  health-check process on different infrastructure) that this app's
+  evaluator pings on success; missing pings, not application logic, are
+  what escalate. The **out-of-band path** is the same idea generalised: at
+  least one notification channel for the alert-that-the-alerter-is-down
+  should not depend on anything this app owns — not the same database, not
+  the same process, ideally not even the same cloud provider region —
+  because every shared dependency is a way for "the alerter is down" and
+  "the alerter can't tell anyone it's down" to have the same root cause.
 - **Symptoms versus causes, and why you alert on symptoms.** `scheduling_lag`
   alerts on "runs are late" (a symptom users would feel), not on "the
   database connection pool is at 80%" (a cause, which might or might not
@@ -181,9 +207,9 @@ tell anyone it's down" to have the same root cause.
 - **What makes an alert actionable.** An alert with no clear next step trains
   people to dismiss it, the same way a log line with no `requestId` trains
   people to skip correlating it — see
-  [`../../mern-tickets/server/src/observability/README.md`](../../mern-tickets/server/src/observability/README.md)
+  [`../../../mern-tickets/server/src/observability/README.md`](../../../mern-tickets/server/src/observability/README.md)
   for the same principle applied to logs. This module's `payload`
-  (`buildPayload`, `src/alerting/lifecycle.js:5-7`) carries the rule kind,
+  (`buildPayload`, `src/alerting/lifecycle.js:6-8`) carries the rule kind,
   the subject, the current state, and the occurrence count — enough for a
   human to know *what* is wrong and *how long* it's been wrong, which is the
   minimum a page needs to be actionable rather than merely noisy.
@@ -278,10 +304,10 @@ psql "$DATABASE_URL" -c "select id, channel, state, attempts, last_error from no
   when a heartbeat stops."
 
 Elsewhere in this repo:
-[`../../mern-tickets/server/src/circuitBreaker/README.md`](../../mern-tickets/server/src/circuitBreaker/README.md)
+[`../../../mern-tickets/server/src/circuitBreaker/README.md`](../../../mern-tickets/server/src/circuitBreaker/README.md)
 for the minimum-volume argument `run_failure_rate` reuses directly, and for
 timeouts as a precondition this module's `AbortSignal.timeout` also leans on;
-[`../../mern-tickets/server/src/observability/README.md`](../../mern-tickets/server/src/observability/README.md)
+[`../../../mern-tickets/server/src/observability/README.md`](../../../mern-tickets/server/src/observability/README.md)
 for what makes a log line (and, by the same argument, an alert) actionable;
 [`../scheduler/README.md`](../scheduler/README.md) for `occurrence_at` versus
 `started_at`, the distinction `scheduling_lag` is built on.

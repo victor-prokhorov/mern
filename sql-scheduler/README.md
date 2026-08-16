@@ -51,10 +51,17 @@ With the dev server running, two background loops run on their own intervals (`T
 ```bash
 curl -s -X POST http://localhost:5005/api/accounts \
   -H 'Content-Type: application/json' -d '{"name":"Acme","timezone":"Europe/Paris"}'
+```
 
+Note the `id` in that response — the schedule below needs it as `accountId`.
+If you ran `npm run seed` first, per "Run it" above, `id` `1` already belongs
+to the seeded Paris account, not this new one, so substitute the real value
+rather than assuming `1`:
+
+```bash
 curl -s -X POST http://localhost:5005/api/schedules \
   -H 'Content-Type: application/json' \
-  -d '{"accountId":1,"name":"daily-digest","cadence":"daily at 09:00","timezone":"Europe/Paris","catchupPolicy":"skip"}'
+  -d '{"accountId":<account id>,"name":"daily-digest","cadence":"daily at 09:00","timezone":"Europe/Paris","catchupPolicy":"skip"}'
 
 curl -s http://localhost:5005/api/schedules
 curl -s http://localhost:5005/api/runs
@@ -70,7 +77,7 @@ npm test        # bootstraps and truncates its own scheduler_test database on ev
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-51 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `scheduler_test` database created automatically on first run.
+62 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `scheduler_test` database created automatically on first run.
 
 ## Topics and their READMEs
 

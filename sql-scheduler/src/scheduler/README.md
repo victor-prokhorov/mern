@@ -17,18 +17,37 @@ retry it forty times with a dead-letter queue."
 
 ## How it works here
 
-**The tick.** `runDueSchedules(pool)` (`src/scheduler/tick.js:61-70`) asks the
+**The tick.** `runDueSchedules(pool)` (`src/scheduler/tick.js:68-82`) asks the
 database for its own current time (`schedulesRepo.currentTime`,
-`src/repositories/schedules.js:22-24` — `SELECT now()`, never
+`src/repositories/schedules.js:26-29` — `SELECT now()`, never
 `new Date()` in application code) and every active schedule whose
 `next_run_at` is at or before that instant (`schedulesRepo.findDue`,
 same file, also filtering with `now()` inside the query itself). Each due
 schedule is processed inside its own transaction
-(`withTransaction(processSchedule)`), so one schedule's failure can't corrupt
-another's bookkeeping.
+(`withTransaction(processSchedule)`) *and* its own `try`/`catch`, so one
+schedule's failure can't corrupt another's bookkeeping or stop the tick from
+reaching the rest of the due list. This isolation was missing for a while:
+`runDueSchedules` originally awaited each schedule in a plain loop with no
+per-schedule guard, so a schedule whose cadence or timezone was bad enough to
+throw (an invalid IANA zone name reaching `Intl.DateTimeFormat` inside
+`nextOccurrence`, say) aborted every later schedule in the same pass. A
+schedule that throws now gets a failure recorded on a run instead
+(`recordScheduleFailure`, `src/scheduler/tick.js:61-66` — a fresh transaction
+inserts a `runs` row keyed on the schedule's own `next_run_at` with
+`status: 'failure'` and the error message) and the loop moves on. The
+schedule stays stuck at the same `next_run_at` until whatever made it throw
+is fixed, which is the point: a run row failing loudly is far better than a
+silent skip. The reachable version of this bug was `POST /api/schedules`
+accepting an invalid IANA timezone name outright (`services/schedules.js`
+validated the cadence but not the timezone) — fixed at the source with
+`isValidTimeZone` (`src/cadence/README.md`) so a schedule with a bad
+timezone is rejected with `400` before it can ever reach the tick at all;
+the per-schedule isolation above is the defense for whatever bad data still
+gets in some other way (a direct database edit, a future code path that
+skips validation), not a substitute for validating at the door.
 
 **Exactly one instance decides — and two independent mechanisms enforce it,
-for two different reasons.** `tick()` (`src/scheduler/tick.js:72-86`) first
+for two different reasons.** `tick()` (`src/scheduler/tick.js:84-98`) first
 takes `pg_try_advisory_lock` (`src/repositories/lock.js`) — non-blocking: if
 another instance already holds it, this call returns `{ acquired: false }`
 immediately and does no work at all. That is the *liveness* half: it stops
@@ -129,18 +148,43 @@ a handler invocation, since with this app's data volumes a single tick
 processing every due schedule inline is not itself a bottleneck — see "What
 this toy skips" below.
 
-## Why polling beats in-process timers here
+## The core concepts
 
-An in-process timer (`setTimeout` scheduled far in advance, or a per-schedule
-interval) dies the moment the process restarts, and every schedule using one
-needs its own recovery logic to notice it missed its window. Polling
-(`tick()` on a fixed interval, checking the database for what's due) needs
-exactly one recovery story — whatever is in `schedules.next_run_at` when the
-process comes back up is authoritative, because it was never trusted to
-survive in memory in the first place. The cost is latency granularity (a
-schedule can fire up to one tick interval late) and the query itself, both
-cheap at this app's scale; the benefit is that "the scheduler restarted" and
-"the scheduler is healthy" require no special-casing anywhere.
+- **Why polling beats in-process timers here.** An in-process timer
+  (`setTimeout` scheduled far in advance, or a per-schedule interval) dies
+  the moment the process restarts, and every schedule using one needs its
+  own recovery logic to notice it missed its window. Polling (`tick()` on a
+  fixed interval, checking the database for what's due) needs exactly one
+  recovery story — whatever is in `schedules.next_run_at` when the process
+  comes back up is authoritative, because it was never trusted to survive in
+  memory in the first place. The cost is latency granularity (a schedule can
+  fire up to one tick interval late) and the query itself, both cheap at
+  this app's scale; the benefit is that "the scheduler restarted" and "the
+  scheduler is healthy" require no special-casing anywhere.
+- **Where the handoff to a queue belongs.** This module decides *when*;
+  `executeHandler` (`src/scheduler/registry.js`) is deliberately the entire
+  surface of *how*. In production, the function registered here for a
+  given schedule name would not do the work itself — it would enqueue a job
+  in `sql-jobs` (leases, retries, dead-lettering, fairness — all explicitly
+  out of scope for this app) and return immediately, so a slow or failing
+  handler can never hold up the tick loop that has other schedules to get
+  through. Building that queue here would be duplicating `sql-jobs`, not
+  integrating with it — this app deliberately stops at "the occurrence is
+  due, and this is what happened when we tried it."
+- **What you give up by not using a broker with native delayed delivery.**
+  A message broker with built-in delayed delivery (a delay queue, or
+  scheduled message support like some cloud queues offer) hands off "run
+  this in 4 hours" as a first-class primitive: the broker itself holds the
+  delay, and there is no polling loop to write, no `next_run_at` column, no
+  advisory lock to think about. What you give up by building on Postgres
+  polling instead: that simplicity, and the ability to schedule an
+  arbitrary one-off delay natively. What you get back: everything here is
+  inspectable with plain SQL (`SELECT * FROM schedules WHERE next_run_at <
+  now()` answers "what's overdue" without needing broker-specific tooling),
+  the exactly-once story is a single unique index instead of trusting a
+  broker's delivery guarantees, and there's no new infrastructure dependency
+  for an app whose actual volume (per-account recurring content schedules)
+  never approaches what a broker's delay queue is built for.
 
 ## Standard practice
 
@@ -179,34 +223,6 @@ cheap at this app's scale; the benefit is that "the scheduler restarted" and
   instances by hash range, say) — every instance polls the same full table,
   and the advisory lock picks exactly one to act; that's fine at this app's
   scale and would need rethinking at a much larger one.
-
-## Where the handoff to a queue belongs
-
-This module decides *when*; `executeHandler` (`src/scheduler/registry.js`) is
-deliberately the entire surface of *how*. In production, the function
-registered here for a given schedule name would not do the work itself —
-it would enqueue a job in `sql-jobs` (leases, retries, dead-lettering,
-fairness — all explicitly out of scope for this app) and return immediately,
-so a slow or failing handler can never hold up the tick loop that has other
-schedules to get through. Building that queue here would be duplicating
-`sql-jobs`, not integrating with it — this app deliberately stops at "the
-occurrence is due, and this is what happened when we tried it."
-
-## What you give up by not using a broker with native delayed delivery
-
-A message broker with built-in delayed delivery (a delay queue, or scheduled
-message support like some cloud queues offer) hands off "run this in 4 hours"
-as a first-class primitive: the broker itself holds the delay, and there is
-no polling loop to write, no `next_run_at` column, no advisory lock to think
-about. What you give up by building on Postgres polling instead: that
-simplicity, and the ability to schedule an arbitrary one-off delay natively.
-What you get back: everything here is inspectable with plain SQL (`SELECT *
-FROM schedules WHERE next_run_at < now()` answers "what's overdue" without
-needing broker-specific tooling), the exactly-once story is a single unique
-index instead of trusting a broker's delivery guarantees, and there's no new
-infrastructure dependency for an app whose actual volume (per-account
-recurring content schedules) never approaches what a broker's delay queue is
-built for.
 
 ## Try it
 
