@@ -35,7 +35,7 @@ describe('http surface', () => {
     expect(deadRes.body.map((j) => j.id)).to.deep.equal([String(doomed.id)])
   })
 
-  it('retrying a dead job resets it to ready so a worker can pick it up again', async () => {
+  it('retrying a dead job grants exactly one more attempt, not a fresh retry budget', async () => {
     const doomed = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 1 })
     const [claimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
     await jobsRepo.failJob(pool, { jobId: claimed.id, workerId: 'w', lockedAt: claimed.locked_at, error: 'boom', delayMs: 0, dead: true })
@@ -46,7 +46,8 @@ describe('http surface', () => {
     expect(res.body.status).to.equal('ready')
     const current = await jobsRepo.findById(pool, doomed.id)
     expect(current.status).to.equal('ready')
-    expect(current.attempts).to.equal(0)
+    expect(current.attempts).to.equal(1)
+    expect(current.max_attempts).to.equal(2)
   })
 
   it('retrying a job that is not dead is rejected', async () => {

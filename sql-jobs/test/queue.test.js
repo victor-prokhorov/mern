@@ -94,6 +94,23 @@ describe('queue', () => {
     })
   })
 
+  describe('reaping', () => {
+    it('preserves a real prior last_error instead of discarding it for "lease expired"', async () => {
+      const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 5 })
+      const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
+      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'upstream responded 500', random: () => 0 })
+      const [claim2] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await sleep(20)
+
+      const reaped = await jobsRepo.reapExpired(pool)
+
+      expect(reaped.map((r) => r.id)).to.deep.equal([job.id])
+      const current = await jobsRepo.findById(pool, job.id)
+      expect(current.last_error).to.include('upstream responded 500')
+      expect(current.last_error).to.include('lease expired')
+    })
+  })
+
   describe('heartbeat', () => {
     it('a heartbeat prevents reaping', async () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
