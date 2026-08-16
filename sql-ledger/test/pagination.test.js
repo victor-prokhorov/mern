@@ -84,6 +84,23 @@ describe('pagination', () => {
     expect(allIds).to.include.members([r1.id, r2.id, r3.id])
   })
 
+  it('does not skip rows when the page boundary falls between transfers created within the same millisecond', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const r1 = await makeTransfer(alice.id, bob.id, 'micro-1')
+    const r2 = await makeTransfer(alice.id, bob.id, 'micro-2')
+    const r3 = await makeTransfer(alice.id, bob.id, 'micro-3')
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123100Z', r1.id])
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123400Z', r2.id])
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123900Z', r3.id])
+
+    const page1 = await keysetPage({ limit: 2 })
+    const page2 = await keysetPage({ limit: 2, cursor: page1.body.nextCursor })
+
+    expect(page1.body.transfers.map((t) => t.id)).to.deep.equal([r3.id, r2.id])
+    expect(page2.body.transfers.map((t) => t.id)).to.deep.equal([r1.id])
+  })
+
   it('has no nextCursor on the last page', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
