@@ -1,7 +1,9 @@
+import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
+import * as blocksController from '../src/controllers/blocks.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
 import User from '../src/models/user.js'
@@ -149,6 +151,31 @@ describe('user blocklist', () => {
     const removed = await request.execute(app).delete(`/api/blocks/${created.body._id}`).set('x-admin-token', 'test-admin-token')
 
     expect(removed).to.have.status(204)
+  })
+
+  it('safeEqual decides equal, unequal, and different-length inputs all through timingSafeEqual', () => {
+    const originalTimingSafeEqual = crypto.timingSafeEqual
+    let timingSafeEqualCalls = 0
+    crypto.timingSafeEqual = (...args) => {
+      timingSafeEqualCalls += 1
+      return originalTimingSafeEqual.apply(crypto, args)
+    }
+
+    let equal
+    let unequal
+    let differentLength
+    try {
+      equal = blocksController.safeEqual('secret-token', 'secret-token')
+      unequal = blocksController.safeEqual('secret-token', 'secret-tokex')
+      differentLength = blocksController.safeEqual('short', 'a-much-longer-token')
+    } finally {
+      crypto.timingSafeEqual = originalTimingSafeEqual
+    }
+
+    expect(equal).to.equal(true)
+    expect(unequal).to.equal(false)
+    expect(differentLength).to.equal(false)
+    expect(timingSafeEqualCalls).to.equal(3)
   })
 
   it('rejects the admin surface with a missing or wrong token', async () => {
