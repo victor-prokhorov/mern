@@ -115,6 +115,21 @@ describe('queue', () => {
   })
 
   describe('heartbeat', () => {
+    it('a stale epochs heartbeat does not extend the lease of a reclaimed job', async () => {
+      await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
+      const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await sleep(20)
+      await jobsRepo.reapExpired(pool)
+      const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
+
+      const extended = await jobsRepo.heartbeat(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: staleClaim.locked_at, leaseMs: 5000 })
+      await sleep(60)
+      const reaped = await jobsRepo.reapExpired(pool)
+
+      expect(extended).to.equal(null)
+      expect(reaped.map((r) => r.id)).to.deep.equal([reclaimed.id])
+    })
+
     it('a heartbeat prevents reaping', async () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [claimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
