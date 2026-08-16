@@ -207,6 +207,22 @@ describe('queue', () => {
       expect(forAccount1.length).to.be.at.most(2)
       expect(forAccount2.length).to.equal(1)
     })
+
+    it('the worker applies the fairness cap through its own claim loop, the same path index.js wires WORKER_PER_ACCOUNT_LIMIT into', async () => {
+      registerHandler('send_message', () => sleep(200))
+      for (let i = 0; i < 10; i++) await jobsRepo.enqueue(pool, { kind: 'send_message', payload: { accountId: '1' } })
+      await jobsRepo.enqueue(pool, { kind: 'send_message', payload: { accountId: '2' } })
+      const worker = createWorker({ pool, workerId: 'w', concurrency: 3, pollMs: 20, leaseMs: 5000, perAccountLimit: 2 })
+
+      await worker.tick()
+      const running = await pool.query("SELECT payload FROM jobs WHERE status = 'running'")
+
+      await worker.stop({ timeoutMs: 500 })
+      const forAccount1 = running.rows.filter((r) => r.payload.accountId === '1')
+      const forAccount2 = running.rows.filter((r) => r.payload.accountId === '2')
+      expect(forAccount1.length).to.be.at.most(2)
+      expect(forAccount2.length).to.equal(1)
+    })
   })
 
   describe('graceful shutdown', () => {
