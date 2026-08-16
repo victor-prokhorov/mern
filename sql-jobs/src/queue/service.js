@@ -45,11 +45,12 @@ export async function completeJob(pool, { jobId, workerId, lockedAt }) {
   return jobsRepo.completeJob(pool, { jobId, workerId, lockedAt })
 }
 
-export async function failJob(pool, { jobId, workerId, lockedAt, attempts, maxAttempts, error, random }) {
-  const nextAttempts = attempts + 1
-  const dead = nextAttempts >= maxAttempts
+export async function failJob(pool, { jobId, workerId, lockedAt, error, random }) {
+  const current = await jobsRepo.findClaimed(pool, { jobId, workerId, lockedAt })
+  if (!current) return false
+  const dead = current.attempts + 1 >= current.max_attempts
   const message = error instanceof Error ? error.message : String(error)
-  const delayMs = dead ? 0 : backoffMs(attempts, { random })
+  const delayMs = dead ? 0 : backoffMs(current.attempts, { random })
   return jobsRepo.failJob(pool, { jobId, workerId, lockedAt, error: message, delayMs, dead })
 }
 

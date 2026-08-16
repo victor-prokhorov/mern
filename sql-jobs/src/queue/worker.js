@@ -33,14 +33,7 @@ export function createWorker({
       await handler(job)
       await completeJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at })
     } catch (err) {
-      await failJob(pool, {
-        jobId: job.id,
-        workerId,
-        lockedAt: job.locked_at,
-        attempts: job.attempts,
-        maxAttempts: job.max_attempts,
-        error: err
-      })
+      await failJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, error: err })
       onError(err, job)
     } finally {
       clearInterval(hbTimer)

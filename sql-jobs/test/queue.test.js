@@ -101,7 +101,7 @@ describe('queue', () => {
     it('preserves a real prior last_error instead of discarding it for "lease expired"', async () => {
       const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 5 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
-      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'upstream responded 500', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, error: 'upstream responded 500', random: () => 0 })
       await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
@@ -192,10 +192,10 @@ describe('queue', () => {
     it('a job exceeding max_attempts goes dead, and a later healthy job still runs', async () => {
       const doomed = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 2 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
-      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'boom', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, error: 'boom', random: () => 0 })
       const [claim2] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
-      await queue.failJob(pool, { jobId: claim2.id, workerId: 'w', lockedAt: claim2.locked_at, attempts: claim2.attempts, maxAttempts: claim2.max_attempts, error: 'boom again', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim2.id, workerId: 'w', lockedAt: claim2.locked_at, error: 'boom again', random: () => 0 })
       const healthy = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [claim3] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
@@ -209,7 +209,7 @@ describe('queue', () => {
       const [claim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
       await pool.query('UPDATE jobs SET attempts = attempts + 1 WHERE id = $1', [job.id])
 
-      const failed = await queue.failJob(pool, { jobId: claim.id, workerId: 'w', lockedAt: claim.locked_at, attempts: claim.attempts, maxAttempts: claim.max_attempts, error: 'boom', random: () => 0 })
+      const failed = await queue.failJob(pool, { jobId: claim.id, workerId: 'w', lockedAt: claim.locked_at, error: 'boom', random: () => 0 })
 
       expect(failed).to.equal(true)
       const current = await jobsRepo.findById(pool, job.id)

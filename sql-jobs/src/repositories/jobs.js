@@ -110,6 +110,15 @@ export async function heartbeat(client, { jobId, workerId, lockedAt, leaseMs }) 
   return rows[0] || null
 }
 
+export async function findClaimed(client, { jobId, workerId, lockedAt }) {
+  const { rows } = await client.query(
+    `SELECT id, attempts, max_attempts FROM jobs
+     WHERE id = $1 AND locked_by = $2 AND locked_at = $3 AND status = 'running'`,
+    [jobId, workerId, lockedAt]
+  )
+  return rows[0] || null
+}
+
 export async function completeJob(client, { jobId, workerId, lockedAt }) {
   const { rows } = await client.query(
     `UPDATE jobs
