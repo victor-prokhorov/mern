@@ -38,12 +38,17 @@ export async function deliverMessage(job) {
   const { messageId, recipient, body, upstreamUrl } = job.payload
   const claimed = await messagesRepo.beginSending(pool, messageId)
   if (!claimed) return false
-  const upstreamResponse = await fetch(upstreamUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ messageId, recipient, body }),
-    signal: AbortSignal.timeout(2000)
-  })
-  if (!upstreamResponse.ok) throw new Error(`upstream responded ${upstreamResponse.status}`)
-  return messagesRepo.markSent(pool, messageId)
+  try {
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageId, recipient, body }),
+      signal: AbortSignal.timeout(2000)
+    })
+    if (!upstreamResponse.ok) throw new Error(`upstream responded ${upstreamResponse.status}`)
+    return await messagesRepo.markSent(pool, messageId)
+  } catch (err) {
+    if (job.attempts + 1 >= job.max_attempts) await messagesRepo.markFailed(pool, messageId)
+    throw err
+  }
 }
