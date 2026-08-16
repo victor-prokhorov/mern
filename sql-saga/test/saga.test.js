@@ -179,6 +179,72 @@ describe('saga engine', () => {
     expect(calls).to.equal(1)
   })
 
+  it('a flaky compensation is retried within its budget and the saga still ends compensated', async () => {
+    const saga = await makeSaga([
+      { name: 'a', kind: 'compensatable', maxAttempts: 3 },
+      { name: 'boom', kind: 'compensatable', maxAttempts: 1 }
+    ])
+    let aCompensations = 0
+    const registry = new Map([
+      ['a', { action: async () => {}, compensate: async () => { aCompensations += 1; if (aCompensations < 3) throw new Error('release API 503') } }],
+      ['boom', { action: async () => { throw new Error('payment declined') }, compensate: async () => {} }]
+    ])
+
+    const result = await run(saga.id, registry)
+
+    expect(result.status).to.equal('compensated')
+    expect(aCompensations).to.equal(3)
+    const a = (await steps(saga.id)).find((s) => s.name === 'a')
+    expect(a.status).to.equal('compensated')
+    expect(a.attempts).to.equal(2)
+    expect(a.last_error).to.equal('release API 503')
+  })
+
+  it('a compensation that exhausts its retry budget leaves the saga compensating and resumable instead of throwing', async () => {
+    const saga = await makeSaga([
+      { name: 'a', kind: 'compensatable', maxAttempts: 2 },
+      { name: 'boom', kind: 'compensatable', maxAttempts: 1 }
+    ])
+    let aCompensations = 0
+    const registry = new Map([
+      ['a', { action: async () => {}, compensate: async () => { aCompensations += 1; throw new Error('release keeps failing') } }],
+      ['boom', { action: async () => { throw new Error('payment declined') }, compensate: async () => {} }]
+    ])
+
+    const result = await run(saga.id, registry)
+
+    expect(result.status).to.equal('compensating')
+    expect(aCompensations).to.equal(2)
+    const statuses = Object.fromEntries((await steps(saga.id)).map((s) => [s.name, s.status]))
+    expect(statuses).to.deep.equal({ a: 'done', boom: 'failed' })
+  })
+
+  it('re-running a saga wedged in compensating resumes compensation and never re-enters the forward path', async () => {
+    const saga = await makeSaga([
+      { name: 'a', kind: 'compensatable', maxAttempts: 1 },
+      { name: 'b', kind: 'compensatable', maxAttempts: 1 },
+      { name: 'boom', kind: 'compensatable', maxAttempts: 1 }
+    ])
+    const compensations = []
+    let boomActions = 0
+    let aCompensations = 0
+    const registry = new Map([
+      ['a', { action: async () => {}, compensate: async () => { aCompensations += 1; if (aCompensations === 1) throw new Error('release API down'); compensations.push('a') } }],
+      ['b', { action: async () => {}, compensate: async () => compensations.push('b') }],
+      ['boom', { action: async () => { boomActions += 1; if (boomActions === 1) throw new Error('payment declined') }, compensate: async () => compensations.push('boom') }]
+    ])
+    await run(saga.id, registry).catch(() => {})
+    expect((await sagaRepo.findSaga(pool, saga.id)).status).to.equal('compensating')
+
+    const result = await run(saga.id, registry)
+
+    expect(result.status).to.equal('compensated')
+    expect(boomActions).to.equal(1)
+    expect(compensations).to.deep.equal(['b', 'a'])
+    const statuses = Object.fromEntries((await steps(saga.id)).map((s) => [s.name, s.status]))
+    expect(statuses).to.deep.equal({ a: 'compensated', b: 'compensated', boom: 'failed' })
+  })
+
   it('domain steps and compensations are idempotent under at-least-once execution: replaying reserve, release and charge is a no-op', async () => {
     await inventoryRepo.upsertItem(pool, { sku: 'X', available: 10 })
 
