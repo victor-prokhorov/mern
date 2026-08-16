@@ -192,6 +192,27 @@ describe('password reset', () => {
     expect(refreshed).to.have.status(401)
   })
 
+  it('revokes sessions before the password hash write, so a crash between the two leaves the password unchanged and the sessions dead', async () => {
+    await seedUsers()
+    const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+    const forgot = await request.execute(app).post('/api/auth/forgot-password').send({ email: seedUser.email })
+    const originalUpdateOne = User.updateOne
+
+    User.updateOne = () => { throw new Error('simulated crash at the password hash write') }
+    let reset
+    try {
+      reset = await request.execute(app).post('/api/auth/reset-password').send({ token: forgot.body.token, password: 'correct-horse-battery' })
+    } finally {
+      User.updateOne = originalUpdateOne
+    }
+    const refreshed = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: login.body.refreshToken })
+    const oldPasswordLogin = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
+
+    expect(reset).to.have.status(500)
+    expect(refreshed).to.have.status(401)
+    expect(oldPasswordLogin).to.have.status(200)
+  })
+
   it('declares a TTL index on expiresAt so used and expired rows are reaped', async () => {
     await PasswordReset.syncIndexes()
 
