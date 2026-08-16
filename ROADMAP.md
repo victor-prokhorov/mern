@@ -3,7 +3,7 @@
 Three things, in order: (1) the master concept checklist — the full list of
 what a senior/staff backend engineer and architect should master, grouped by
 area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
-unmarked if it is a real gap not in this repo yet; (2) the index of the 27
+unmarked if it is a real gap not in this repo yet; (2) the index of the 28
 guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
 in priority order. Scan section 1 to pick a weakness; jump to section 2 for
 anything already built.
@@ -23,7 +23,8 @@ spot rather than a thing that doesn't matter.
 - Pagination: keyset vs offset, opaque cursors `[covered]` ([pagination](sql-ledger/src/pagination/README.md))
 - Full-text search, relevance ranking, `tsvector` `[roadmap]` (should-have #8)
 - Time and timezones: instants vs wall-clock, DST, TIMESTAMPTZ, IANA tz `[covered]` ([cadence](sql-scheduler/src/cadence/README.md))
-- Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #16)
+- Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #20)
+- Backups, point-in-time recovery (PITR/WAL archiving), restore testing `[roadmap]` (should-have #13)
 - Partitioning and sharding (by range, hash, tenant) — not built
 - Data retention, archival, TTL/reaping `[covered]` (idempotency/rate-limit TTL, outbox growth notes)
 
@@ -34,7 +35,7 @@ spot rather than a thing that doesn't matter.
 - TOCTOU (time-of-check-to-time-of-use) / check-then-act races — the name for the bug behind lost updates and check-then-insert `[covered]` (demonstrated, not labelled: ([idempotency](mern-shop/server/src/idempotency/README.md)) check-then-act, ([ledger](sql-ledger/src/ledger/README.md)) lost update)
 - Row locking, `FOR UPDATE`, `SKIP LOCKED`, advisory locks `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [migrations](sql-ledger/src/migrations/README.md))
 - Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
-- CAP / PACELC, replication lag, read-your-writes, monotonic reads `[roadmap]` (must-have #2)
+- CAP / PACELC, replication lag, read-your-writes, monotonic reads `[covered]` ([replication](sql-replica/src/replication/README.md))
 - CRDTs and convergent merge (the step past whole-document rejection) `[covered]` (concept only, ([concurrency](mern-tickets/server/src/concurrency/README.md)))
 - Distributed transactions, two-phase commit, and why they are avoided `[roadmap]` (must-have #3)
 - Sagas and compensation (orchestration vs choreography) `[roadmap]` (must-have #3)
@@ -56,7 +57,7 @@ spot rather than a thing that doesn't matter.
 - TTL vs invalidation, negative caching, stale-while-revalidate `[covered]` (TTL, invalidation, negative caching built; stale-while-revalidate concept, ([caching](mern-cache/server/src/cache/README.md)))
 - Cache stampede / thundering herd, single-flight, early expiry `[covered]` (single-flight built; probabilistic early expiry concept, ([caching](mern-cache/server/src/cache/README.md)))
 - HTTP caching: Cache-Control, ETag, 304, CDN edge `[covered]` (concept, in the caching guide's prose and its ETag contrast with ([concurrency](mern-tickets/server/src/concurrency/README.md)), ([caching](mern-cache/server/src/cache/README.md)))
-- N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #13)
+- N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #17)
 - Connection pooling, prepared statements — concept only
 - Query plans and index-driven performance `[roadmap]` (should-have #8)
 
@@ -79,7 +80,7 @@ spot rather than a thing that doesn't matter.
 - Fraud scoring, reason codes, explainability, GDPR Art. 22 `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Content moderation, keyword/allowlist, Unicode security `[covered]` ([moderation](mern-tickets/server/src/moderation/README.md))
 - Secrets management, key rotation `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)) + AWS/GCP sections)
-- Multi-tenancy isolation `[roadmap]` (nice-to-have #15)
+- Multi-tenancy isolation `[roadmap]` (nice-to-have #19)
 - Audit logs vs event sourcing, tamper-evidence `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md), [ledger](sql-ledger/src/ledger/README.md))
 
 ### Reliability and resilience
@@ -101,11 +102,13 @@ spot rather than a thing that doesn't matter.
 - Alerting: dedup, hysteresis, cooldown, liveness vs lag rules `[covered]` ([alerting](sql-scheduler/src/alerting/README.md))
 - Latency as a distribution: p50/p95/p99/p999, tail latency, why averages lie `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) slow-is-worse-than-failed, ([observability](mern-tickets/server/src/observability/README.md)) duration histogram) — no dedicated treatment
 - Availability, SLIs/SLOs/error budgets, the nines — not built (mechanics exist; the discipline does not)
+- Profiling: CPU/heap profiles, flamegraphs, event-loop lag `[roadmap]` (should-have #15)
+- Load testing, latency-under-load curves, finding the knee `[roadmap]` (should-have #15)
 
 ### Microservices and inter-service communication
 - Sync RPC vs async messaging vs shared-DB integration — choosing the boundary — not built
 - gRPC and HTTP/2 (streaming, multiplexing, deadlines, interceptors) — not built
-- Binary serialization: Protobuf, Avro, Thrift, MessagePack vs JSON — size, speed, and schema `[covered]` (concept only, via serialization tradeoffs in AWS/GCP notes) — no dedicated guide
+- Binary serialization: Protobuf, Avro, Thrift, MessagePack vs JSON — size, speed, and schema `[roadmap]` (should-have #10) — nothing in the repo covers this yet
 - Schema/IDL evolution: field numbers, forward/backward compatibility, schema registry `[roadmap]` (should-have #9, event side) — RPC/IDL side not built
 - Service discovery, client-side vs server-side load balancing — not built
 - Service mesh (Envoy, Istio), sidecars, outlier detection `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) contrasts app-level breaker vs mesh)
@@ -136,13 +139,15 @@ spot rather than a thing that doesn't matter.
 ### Regionalization and geo-distribution
 - Single-region vs multi-region; active-active vs active-passive — not built
 - Latency-based / geo routing, anycast, edge/CDN presence — not built
-- Cross-region replication and its lag; conflict handling — links to must-have #2 (replication)
+- Cross-region replication and its lag; conflict handling — single-leader lag/routing `[covered]` ([replication](sql-replica/src/replication/README.md)); multi-leader conflict handling not built
 - Data residency and sovereignty (GDPR, regional data boundaries) — not built
-- Regional failover, disaster recovery, RPO/RTO — not built
+- Regional failover, disaster recovery, RPO/RTO `[roadmap]` (should-have #13)
 
 ### Scaling and distribution
 - Horizontal vs vertical scaling, statelessness — concept only
-- Read replicas and replica routing `[roadmap]` (must-have #2)
+- Capacity planning: sizing from Little's Law, headroom policy, load estimation `[roadmap]` (should-have #14)
+- Cost engineering: per-request cost, egress, cardinality as a billing lever, cost as an architectural force `[roadmap]` (should-have #14)
+- Read replicas and replica routing `[covered]` ([replication](sql-replica/src/replication/README.md))
 - Sharding / partitioning strategies — not built
 - Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md))
 - Per-process vs shared state (breaker, health) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
@@ -162,13 +167,17 @@ spot rather than a thing that doesn't matter.
 - Contract tests, property-based testing — concept only / not built
 
 ### Domain and architecture
-- Layered architecture, dependency direction `[covered]` (enforced repo-wide; sql `check-layers.js`)
+- Layered architecture, dependency direction `[covered]` (test-enforced in sql-jobs and sql-ledger via `check-layers.js`; manual `lint:layers` in sql-scheduler; convention only in the MERN apps)
 - Domain-driven design: bounded contexts, aggregates as consistency boundaries, ubiquitous language, context mapping — partial (aggregate/embedding shapes in ([domain modelling](mern-movies/server/src/movies/README.md)); DDD proper not built)
 - State machines vs scattered conditionals `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md))
 - Rules engines vs ML, explainable decisions `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Recommendations: content vs collaborative filtering, cold start `[covered]` ([recommendations](mern-movies/server/src/recommendations/README.md))
 - Hooks/pipelines vs middleware vs events `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
-- Node runtime internals: event loop, workers, stream backpressure `[roadmap]` (nice-to-have #14)
+- Node runtime internals: event loop, workers, stream backpressure `[roadmap]` (nice-to-have #18)
+
+### Engineering practice
+- Architecture decision records (ADRs), RFC/design-doc process `[roadmap]` (should-have #16)
+- Incident reviews / blameless postmortems, runbooks `[roadmap]` (should-have #16)
 
 ## Existing guides — the index
 
@@ -199,11 +208,12 @@ spot rather than a thing that doesn't matter.
 25. [Alert dedup, hysteresis, cooldown](sql-scheduler/src/alerting/README.md) — pending/firing/resolved lifecycle, for_evaluations, consecutive clears, cooldown renotification, liveness vs lag rules, forcing real races in tests
 26. [Mutation testing](tools/mutation/README.md) — mutation operators, kill vs survivor, why coverage lies, seeded sampling, resumable runs
 27. [Caching](mern-cache/server/src/cache/README.md) — cache-aside vs write-through/write-behind, TTL as a staleness bound vs invalidation-on-write, negative caching, the cache stampede and single-flight coalescing, HTTP caching (Cache-Control/ETag/304/CDN) and how its ETag differs from the write-side ETag, per-process vs distributed limits
+28. [Replication and read-after-write consistency](sql-replica/src/replication/README.md) — replication lag as bounded staleness, primary/replica read routing, read-your-writes (sticky-primary window vs write-position token), monotonic reads and session pinning, CAP vs PACELC, why a ledger reads the primary
 
 ## Roadmap — must-have
 
 1. **Caching** — **built**, see [`mern-cache/server/src/cache/README.md`](mern-cache/server/src/cache/README.md): cache-aside vs write-through, TTL vs explicit invalidation, cache stampede protection (request coalescing, locks, probabilistic early expiry), HTTP caching (`Cache-Control`, ETag-for-caching, 304s), CDN layer, negative caching, stale-while-revalidate
-2. **Replication and consistency** — read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
+2. **Replication and consistency** — **built**, see [`sql-replica/src/replication/README.md`](sql-replica/src/replication/README.md): read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
 3. **Sagas / distributed transactions** — compensation, orchestration vs choreography, saga state machines, pivot transactions, why two-phase commit is avoided, building on outbox + queue
 4. **Feature flags and deploy strategies** — percentage rollout, targeting, kill switches, flag lifecycle and cleanup debt, blue-green and canary deploys, flags as expand-contract for behavior
 5. **Web security: injection classes** — NoSQL/SQL injection, XSS (stored/reflected/DOM), CSRF and why token-in-header auth changes it, SSRF, prototype pollution, input validation boundaries, output encoding
@@ -218,10 +228,14 @@ spot rather than a thing that doesn't matter.
 
 11. **OpenAPI-driven APIs** — spec-first design, generated clients/servers, runtime request/response validation against the contract, keeping the spec and code from drifting
 12. **Kubernetes deployment** — containerizing one of these apps, Deployment + Service + Ingress, probes wired to `/healthz`/`/readyz`, ConfigMap/Secret injection, rolling update + graceful shutdown, resource limits and an HPA
+13. **Backup and disaster recovery** — PITR and WAL archiving, RPO/RTO as product decisions not defaults, restore drills (an untested backup is a hope), why replication is not backup (it replicates the DELETE), failover runbooks
+14. **Capacity planning and cost engineering** — sizing from Little's Law and measured load, headroom policy, back-of-envelope estimation, cloud cost modeling (per-request cost, egress, metric cardinality as the billing lever), cost as a first-class architectural force
+15. **Performance profiling and load testing** — CPU/heap profiles, flamegraphs, event-loop lag, load tests (k6/artillery-style) against one of these apps, latency-vs-throughput curves and finding the knee; the repo today measures correctness, never speed
+16. **Engineering practice artifacts** — ADRs, RFC/design-doc process, blameless incident reviews, runbooks; the writing-and-deciding layer of the architect role that no amount of code teaches
 
 ## Roadmap — nice-to-have
 
-13. **N+1 and dataloaders** — batching, per-request caching, the GraphQL version of the problem
-14. **Node internals** — event loop phases, blocking the loop, worker threads, stream backpressure
-15. **Multi-tenancy** — tenant isolation models (row/schema/database), noisy neighbours, per-tenant limits
-16. **Blob storage and uploads** — presigned URLs, direct-to-storage uploads, content-type validation, lifecycle policies
+17. **N+1 and dataloaders** — batching, per-request caching, the GraphQL version of the problem
+18. **Node internals** — event loop phases, blocking the loop, worker threads, stream backpressure
+19. **Multi-tenancy** — tenant isolation models (row/schema/database), noisy neighbours, per-tenant limits
+20. **Blob storage and uploads** — presigned URLs, direct-to-storage uploads, content-type validation, lifecycle policies
