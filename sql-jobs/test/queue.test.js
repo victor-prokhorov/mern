@@ -102,7 +102,7 @@ describe('queue', () => {
       const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 5 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
       await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'upstream responded 500', random: () => 0 })
-      const [claim2] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
       const reaped = await jobsRepo.reapExpired(pool)
@@ -115,12 +115,27 @@ describe('queue', () => {
   })
 
   describe('heartbeat', () => {
+    it('a stale epochs heartbeat does not extend the lease of a reclaimed job', async () => {
+      await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
+      const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await sleep(20)
+      await jobsRepo.reapExpired(pool)
+      const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
+
+      const extended = await jobsRepo.heartbeat(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: staleClaim.locked_at, leaseMs: 5000 })
+      await sleep(60)
+      const reaped = await jobsRepo.reapExpired(pool)
+
+      expect(extended).to.equal(null)
+      expect(reaped.map((r) => r.id)).to.deep.equal([reclaimed.id])
+    })
+
     it('a heartbeat prevents reaping', async () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [claimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
 
       await sleep(15)
-      await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', leaseMs: 5000 })
+      await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', lockedAt: claimed.locked_at, leaseMs: 5000 })
       await sleep(30)
       const reaped = await jobsRepo.reapExpired(pool)
 
@@ -167,7 +182,7 @@ describe('queue', () => {
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
       let deliveries = 0
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         deliveries += 1
         res.writeHead(200)
         res.end()
@@ -200,7 +215,7 @@ describe('queue', () => {
       const { deliverMessage } = await import('../src/services/messages.js')
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         res.writeHead(500)
         res.end()
       })
@@ -236,7 +251,7 @@ describe('queue', () => {
       const { deliverMessage } = await import('../src/services/messages.js')
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         res.writeHead(500)
         res.end()
       })
@@ -266,6 +281,29 @@ describe('queue', () => {
       expect(threw).to.equal(true)
       const { rows } = await appPool.query('SELECT status FROM messages WHERE id = $1', [messageId])
       expect(rows[0].status).to.equal('sending')
+    })
+
+    it('a job dead-lettered by the reaper on its final attempt marks the message failed, not stuck sending forever', async () => {
+      const messagesService = await import('../src/services/messages.js')
+      const messagesRepo = await import('../src/repositories/messages.js')
+      registerHandler('send_message', messagesService.deliverMessage, { onDead: messagesService.markDeliveryFailed })
+      const accountRow = await pool.query("INSERT INTO accounts (name) VALUES ('a') RETURNING id")
+      const accountId = accountRow.rows[0].id
+      const messageRow = await pool.query(
+        "INSERT INTO messages (account_id, recipient, body) VALUES ($1, 'r', 'b') RETURNING id",
+        [accountId]
+      )
+      const messageId = messageRow.rows[0].id
+      await jobsRepo.enqueue(pool, { kind: 'send_message', payload: { messageId }, maxAttempts: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await messagesRepo.beginSending(pool, messageId)
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool)
+
+      expect(reaped.map((r) => r.status)).to.deep.equal(['dead'])
+      const { rows } = await pool.query('SELECT status FROM messages WHERE id = $1', [messageId])
+      expect(rows[0].status).to.equal('failed')
     })
   })
 
