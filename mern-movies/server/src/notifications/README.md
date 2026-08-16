@@ -169,7 +169,17 @@ MongoDB 7 rather than assumed:
   the replay above, the thrown `MongoBulkWriteError` carries
   `code: 11000`, five entries in `writeErrors`, and an `insertedDocs`
   array holding exactly the one document that landed — which is what
-  `repositories/notifications.js:12` returns instead of throwing.
+  the repository returns instead of throwing.
+- The top-level `code` on a `MongoBulkWriteError` is taken from the
+  *first* write error, so a mixed batch — one duplicate plus one
+  genuinely failed insert — still reports `11000` at the top. Checking
+  only `err.code === 11000` would swallow that batch as if it were
+  duplicates-only, converting the non-duplicate failure into silent
+  partial success. The guard in `repositories/notifications.js`
+  therefore inspects every entry in `writeErrors` (each carries its own
+  code, verified as `writeError.err.code` in the shape Mongoose
+  rethrows) and only treats the error as benign when all of them are
+  duplicate-key failures; anything else rethrows.
 
 There is a real gap underneath all of this that the code does not
 close. The unique index is declared with `schema.index(...,
