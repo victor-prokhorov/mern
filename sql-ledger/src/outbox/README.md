@@ -52,6 +52,14 @@ and *commits immediately* — the claimed rows' locks are released the instant t
 - No change-data-capture alternative actually implemented — CDC is named and scoped in the core concepts above, but this relay only ever polls.
 - No metrics/alerting on outbox depth or dead-letter count — a real operator would want to know when unpublished rows are accumulating faster than the relay drains them, or when something is landing in the dead-letter state.
 
+## In the real world (AWS / GCP)
+
+- **The polling relay is usually the part you replace first, with CDC.** On AWS the standard stack is **Debezium on MSK Connect** (or DMS for coarser replication) tailing the RDS/Aurora Postgres WAL and publishing each committed outbox row to Kafka/EventBridge — zero poll latency, no query load on an empty table. On GCP the equivalent is **Datastream** (or Debezium on a GKE-run Kafka Connect) out of Cloud SQL/AlloyDB into Pub/Sub. The transactional write half of the pattern — entity + outbox row in one transaction — is unchanged; only the relay's transport changes.
+- **Some databases make the outbox table itself unnecessary.** **DynamoDB Streams** and **Spanner/Firestore change streams** are a built-in, ordered, at-least-once feed of committed writes — the database ships its own CDC, so "write the intent in the same transaction" is free because the write *is* the intent. The price is you publish the raw row change, not a purpose-shaped event, so most teams still keep an outbox-shaped item to control the event contract.
+- **The delivery target stops being one URL.** In production the relay publishes to a bus — **EventBridge**/**SNS** on AWS, **Pub/Sub** on GCP — and the bus owns fan-out, retry with backoff, and dead-letter queues per consumer. That moves this README's `backoffMs`, `maxAttempts`, and dead-letter logic out of your code and into subscription config, which is exactly where you want an operator tuning it.
+- **What never moves: at-least-once and consumer idempotency.** EventBridge, SNS, Pub/Sub, Kafka — every one of them documents at-least-once delivery. The message id this relay stamps on every payload, and the consumer-side dedupe it enables, is the portable half of the pattern; carry it to whichever transport you land on.
+- **The lease this schema is missing is a checkbox there.** SQS's visibility timeout and Pub/Sub's ack deadline are the `visible_after` column this outbox deliberately lacks — moving to a managed queue is also how most teams get the claim-lease behaviour without building it.
+
 ## Try it
 
 Requires the app running against the real `ledger` database, with `OUTBOX_TARGET_URL` pointed at something that will actually receive the POST. The snippet below is a one-route `node:http` server that just logs whatever it receives:

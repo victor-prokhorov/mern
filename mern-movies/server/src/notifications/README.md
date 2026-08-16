@@ -368,6 +368,13 @@ this notification type entirely), none of which exist here.
   follow/unfollow, no email or push delivery — this API only ever
   writes rows a client is expected to poll via `GET /api/notifications`.
 
+## In the real world (AWS / GCP)
+
+- **The fan-out moves off the request path and onto a bus.** The production shape of `fanoutNewMovie` is: the movie write emits one event (via the outbox pattern above), and **SNS → per-consumer SQS queues** (AWS) or one **Pub/Sub topic with multiple subscriptions** (GCP) carries it; a worker consumes the event, queries followers, and bulk-writes notification rows in batches. The inline call this app makes is the thing that stops scaling first — a million followers inside one HTTP request is the celebrity problem made literal.
+- **Delivery channels are their own managed products**: **SES**/**Pinpoint** for email/push on AWS, **Firebase Cloud Messaging** for push on GCP — each with its own at-least-once semantics, so the `{ user, movie, actor }` unique-key dedupe this module teaches gets re-applied one layer down (FCM collapse keys, SES idempotent sends by message dedup id on SQS FIFO).
+- **The notifications table itself often changes database.** One row per (follower, event) with single-key reads ("my notifications, newest first") and TTL expiry is a textbook **DynamoDB** (partition key `user`, sort key `createdAt`) or **Firestore** (subcollection per user) workload — cheap, horizontally scaled, and the unique composite key becomes a deterministic document id (`user_movie_actor`), which makes the insert idempotent by construction. That is the same trick as this module's unique index, expressed as a key instead of a constraint.
+- **Digests and rate caps** — the batching this toy skips — usually run as a scheduled aggregation job (EventBridge Scheduler / Cloud Scheduler firing a worker that collapses pending rows into one digest), which is exactly the `sql-scheduler` + `sql-jobs` composition in this repo.
+
 ## Try it
 
 ```

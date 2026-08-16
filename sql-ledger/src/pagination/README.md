@@ -41,6 +41,12 @@ Migration `006_transfers_created_at_id_index.concurrent.sql` (see `src/migration
 - No support for a caller-supplied sort order — `created_at DESC, id DESC` is the only order this endpoint knows.
 - No rate limiting specifically aimed at deep-pagination abuse — the cost argument in "Deep pagination as a denial-of-service surface" above is why keyset avoids the problem structurally, not because this app additionally throttles it.
 
+## In the real world (AWS / GCP)
+
+- Keyset is the *only* pagination the cloud-native stores offer: **DynamoDB**'s `LastEvaluatedKey`/`ExclusiveStartKey` and **Firestore**'s `startAfter(snapshot)` are exactly this README's cursor — the last row's key, handed back to continue after it. Neither has an OFFSET at all, which is the strongest available endorsement of the argument above: at scale, position-based pagination isn't discouraged, it's unimplementable.
+- The same shape shows up in every mature HTTP API: Stripe's `starting_after`, GitHub's cursor-based GraphQL connections, Google's AIP-158 page tokens. When you design a public list endpoint on either cloud, the reviewable questions are the ones this README covers — sort key + tiebreaker, opaque token, no total count — not which library to use.
+- The one thing to add for a public API that this toy skips: sign or encrypt the cursor (a few lines with **KMS**/**Cloud KMS**, or an HMAC with a key from Secrets Manager/Secret Manager) so the sort key never becomes de-facto API surface.
+
 ## Try it
 
 Requires the app running against the real `ledger` database (see the root `README.md`), with at least four transfers already created (see [`../ledger/README.md`](../ledger/README.md)'s Try it section — run its transfer curl a few times with different `reference` values).

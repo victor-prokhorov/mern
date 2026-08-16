@@ -71,6 +71,15 @@ The five algorithms below differ mainly in one thing: what burst they let throug
 - No `RateLimit-Policy`, so a client is told the binding limit but never which policy it belongs to or what the other applicable policies are. Collapsing several limiters into one triple is lossy by construction; this app collapses safely, but it still collapses.
 - No `trust proxy` configuration, so this app cannot be correctly IP-limited behind a load balancer or CDN without a code change.
 
+## In the real world (AWS / GCP)
+
+The "enforce at more than one layer" bullet above becomes concrete service names:
+
+- **Edge layer.** **AWS WAF rate-based rules** (attached to CloudFront/ALB/API Gateway: count requests per IP over a rolling window, block above a threshold) and **GCP Cloud Armor** rate-limiting rules (throttle or ban per client IP, in front of a global load balancer). This is where volumetric abuse dies without ever costing you a database write — the layer this app deliberately lacks.
+- **Gateway layer.** **API Gateway usage plans** (AWS) meter per API key with a token bucket (rate + burst — exactly the algorithm the tickets app implements); **Apigee** quota/spike-arrest policies are GCP's equivalent. This is where per-customer/per-tier limits live, because the gateway already knows who the caller is.
+- **Application layer — this README's layer — keeps the credential-keyed limits.** No edge or gateway product can key on "the email in the login body," because that requires parsing your request. Login-per-email, reset-per-account: these stay in your code, backed by **ElastiCache Redis** (AWS) or **Memorystore** (GCP) instead of the primary database — `INCR` + `EXPIRE` (or redis-cell's GCRA) is sub-millisecond and, critically, an attack on the limiter no longer competes with checkout for the primary's write capacity.
+- **The `trust proxy` note above stops being optional** the moment an ALB/CloudFront or GCP load balancer sits in front: `req.ip` is the load balancer unless Express is told how many proxy hops to trust, and an IP-keyed limiter silently rate-limits the load balancer itself — one shared counter for all traffic.
+
 ## Try it
 
 With the dev server running (`npm run dev`) and seed data loaded, exceed the login limit:

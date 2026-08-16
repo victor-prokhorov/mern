@@ -247,6 +247,12 @@ iterations are ever expected to be needed — a weekly cadence needs at most 7.
   design, and grid-aligned daily behaviour is exactly what the `daily` type is
   for instead.
 
+## In the real world (AWS / GCP)
+
+- Managed schedulers have absorbed this module's hardest part: **EventBridge Scheduler** (AWS) and **Cloud Scheduler** (GCP) both take an IANA timezone per schedule and evaluate cron expressions against it through the provider's own tzdata, DST included — you stop owning `localToInstant`. What you still own is the *policy*: neither service lets you choose what happens to a `02:30` that never exists on spring-forward day; you get the provider's behaviour, documented or not. If your product has to promise "fires at the first valid instant after the gap," you have to test their behaviour against a real transition date exactly the way this module's tests do — the policy questions in this README don't disappear, they just stop being answerable by reading your own code.
+- The storage rule is portable verbatim: store the cadence expression and the zone name (both services do exactly this), never a precomputed local time. DynamoDB, Firestore, Cloud SQL, RDS — `TIMESTAMPTZ`-equivalent instants for computed occurrences, strings for intent.
+- If you need cadence math inside your own service anyway (previews of "next 5 occurrences," validation at write time), the production version of this module is a library that consumes tzdata — `Temporal` (now in Node), `luxon`, or Java's `java.time` — not hand-rolled `Intl` binary search. This module hand-rolls it to teach the mechanism; a real codebase should not.
+
 ## Try it
 
 ```js

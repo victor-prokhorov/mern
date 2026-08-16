@@ -50,6 +50,13 @@ Real identity for checkout. Before this feature, `POST /api/orders` trusted a cl
 - No refresh token binding to a device fingerprint or IP, and no anomaly detection on login (impossible-travel, new-device email) — this app only reacts to reuse of a specific rotated token, nothing softer.
 - **This branch only authenticates checkout, and it is easy to read the app as more protected than it is.** `requireAuth` guards `POST /api/orders` alone. `GET /api/orders/:id` (`routes/orders.js`) has no auth at all — anyone who knows or guesses an order id can read it, including the customer's name, email, and address. Every `/api/cart/*` route (`routes/cart.js`) is also unauthenticated — carts are addressed purely by `cartId` in the URL, so anyone who knows or guesses a cart id can read it, add items to it, or empty it. Both were already true before this feature and remain true after it; this branch closes the identity hole at the one endpoint that places a real order, not the endpoints that lead up to it.
 
+## In the real world (AWS / GCP)
+
+- **Most teams buy this feature rather than build it.** **Amazon Cognito** (AWS) and **Identity Platform / Firebase Auth** (GCP) issue exactly this README's token pair — short-lived JWT access tokens verified statelessly against a published **JWKS** endpoint, long-lived refresh tokens the service can revoke — plus the things this app lists as skips: `kid`-based signing-key rotation, refresh-token revocation APIs, device tracking, MFA, anomaly detection (Cognito's "advanced security" flags impossible-travel logins). The architecture you learned here is what's inside the box; buying it changes who rotates the keys, not the design.
+- **Verification stays in your service either way**: an API Gateway JWT authorizer (AWS) or Cloud Endpoints/API Gateway JWT validation (GCP) can do the signature check at the edge — same stateless trade, same "revocation waits for expiry" consequence, now enforced one hop earlier.
+- **If you do run your own signing keys**, they live in **KMS/Secrets Manager** (AWS) or **Cloud KMS/Secret Manager** (GCP) with rotation schedules — never an env var on a long-lived box. The `JWT_SECRET`-throws-at-startup discipline here is the toy version of "the key is injected by the platform, and a misconfigured deployment fails loudly."
+- **The session store** (this app's Mongo `Session` collection) becomes **DynamoDB** or **ElastiCache Redis** on AWS, **Firestore** or **Memorystore** on GCP — single-key lookups by token hash with TTL expiry are the canonical KV workload, and the atomic `findOneAndUpdate` consume translates to a DynamoDB conditional update or a Redis Lua script: same one-operation compare-and-consume, different spelling.
+
 ## Try it
 
 Log in and capture both tokens:

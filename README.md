@@ -54,11 +54,43 @@ Twenty-six guides, each beside the code it describes — mutation testing counts
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
 
+## In the real world (AWS / GCP)
+
+Several guides now carry an "In the real world (AWS / GCP)" section mapping the
+hand-built mechanism onto the managed service that replaces it in production —
+what the service absorbs, and what stays your code no matter what you buy.
+The mappings, in one table:
+
+| Hand-built here | AWS | GCP |
+|---|---|---|
+| Job queue: lease, reaper, heartbeat, DLQ ([sql-jobs](sql-jobs/src/queue/README.md)) | SQS (visibility timeout, redrive/DLQ), Lambda/ECS workers | Cloud Tasks / Pub/Sub (ack deadline, dead-letter topic), Cloud Run workers |
+| Transactional outbox + polling relay ([sql-ledger](sql-ledger/src/outbox/README.md)) | Debezium on MSK Connect, EventBridge/SNS | Datastream, Pub/Sub |
+| Timezone-correct scheduling, tick loop ([sql-scheduler](sql-scheduler/src/scheduler/README.md)) | EventBridge Scheduler | Cloud Scheduler, Cloud Tasks |
+| Alert dedup, hysteresis, cooldown ([sql-scheduler](sql-scheduler/src/alerting/README.md)) | CloudWatch Alarms + SNS | Cloud Monitoring alerting + notification channels |
+| Sessions, JWT, rotation, revocation ([mern-shop](mern-shop/server/src/session/README.md)) | Cognito, KMS/Secrets Manager | Identity Platform / Firebase Auth, Cloud KMS |
+| Rate limiting at three layers ([mern-shop](mern-shop/server/src/rateLimit/README.md)) | WAF rate rules, API Gateway usage plans, ElastiCache | Cloud Armor, Apigee, Memorystore |
+| Idempotency keys ([mern-shop](mern-shop/server/src/idempotency/README.md)) | DynamoDB conditional writes (see Lambda Powertools idempotency) | Firestore `create()` |
+| Logs / metrics / probes / shutdown ([mern-tickets](mern-tickets/server/src/observability/README.md)) | CloudWatch, X-Ray, ALB health checks | Cloud Logging/Monitoring/Trace, Cloud Run probes |
+| Fan-out notifications ([mern-movies](mern-movies/server/src/notifications/README.md)) | SNS→SQS, SES/Pinpoint | Pub/Sub multi-subscription, FCM |
+| Keyset pagination ([sql-ledger](sql-ledger/src/pagination/README.md)) | DynamoDB `LastEvaluatedKey` | Firestore `startAfter` |
+
+On database choice, the short version this repo teaches by construction:
+`sql-ledger` exists because a money ledger needs multi-row transactions and
+database-enforced invariants — relational (RDS/Aurora, Cloud SQL/AlloyDB,
+Spanner) is the default there. The MERN apps show where a document store is
+fine: single-document atomicity plus unique indexes cover sessions, rate
+limits, idempotency claims, and notifications, and every place that stops
+being enough is called out in the corresponding guide (the movies fan-out
+that cannot reach a transactional outbox on standalone Mongo is the clearest
+example). Key-value-shaped workloads (sessions by token hash, notifications
+by user) map naturally onto DynamoDB/Firestore; anything whose invariant
+spans rows does not.
+
 ## Requirements
 
 - Node 20+
 - MongoDB on `mongodb://127.0.0.1:27017` for the three MERN apps
-- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger` and `sql-jobs`
+- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger`, `sql-jobs`, and `sql-scheduler`
 
 Neither installed locally? Run them in Docker:
 
@@ -89,10 +121,10 @@ One thing `.env.example` alone does not tell you:
   [mern-shop/README.md](mern-shop/README.md) for the table.
 
 Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
-`sql-ledger` 5002, `sql-jobs` 5004, `mern-shop`'s Vite client 5173. Each app's
-`.env.example` now ships its own distinct default, so any two (or all five)
-can run side by side without an `EADDRINUSE` — which several guides' "Try it"
-sections already assumed when they point at each other.
+`sql-ledger` 5002, `sql-jobs` 5004, `sql-scheduler` 5005, `mern-shop`'s Vite
+client 5173. Each app's `.env.example` ships its own distinct default, so any
+two (or all six) can run side by side without an `EADDRINUSE` — which several
+guides' "Try it" sections already assumed when they point at each other.
 
 `mern-shop` also has a client:
 
@@ -102,16 +134,18 @@ npm install
 npm run dev
 ```
 
-## Running sql-ledger
+## Running the SQL apps
 
-Different shape: no `server/` subdirectory, no seed script, and migrations
-instead of fixtures.
+Different shape: no `server/` subdirectory, and migrations instead of (or in
+addition to) fixtures. `sql-ledger` has no seed script; `sql-jobs` and
+`sql-scheduler` have one.
 
 ```bash
-cd sql-ledger
+cd sql-ledger   # or sql-jobs / sql-scheduler
 npm install
 cp .env.example .env
 npm run migrate
+npm run seed    # sql-jobs and sql-scheduler only
 npm run dev
 ```
 
@@ -123,7 +157,7 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-455 tests across six apps (124 shop, 141 tickets, 58 movies, 46 ledger,
+458 tests across six apps (124 shop, 141 tickets, 58 movies, 46 ledger,
 26 jobs, 63 scheduler), plus a mutation-testing tool under `tools/mutation`
 that audits how much those tests actually prove.
 The MERN suites need a reachable MongoDB; `sql-ledger`, `sql-jobs` and

@@ -57,6 +57,16 @@ An async job queue on plain Postgres: work submitted now, executed later, by one
 - **A single hardcoded `leaseMs` for every job kind.** A real system usually lets a slow job kind declare its own expected lease rather than forcing every kind through one global default.
 - **No idempotency key beyond the handler's own discipline.** `send_message`'s idempotency comes entirely from `messagesRepo.beginSending`'s status guard; a handler that forgets to claim before it sends has no queue-level safety net forcing it to be replay-safe.
 
+## In the real world (AWS / GCP)
+
+How this exact design evolves once you stop running one Postgres and one Node process:
+
+- **The lease is SQS's visibility timeout, almost verbatim.** On AWS the whole claim/lease/reaper/heartbeat block collapses into **SQS**: `ReceiveMessage` is `claimJobs`, the visibility timeout is `lease_expires_at`, `ChangeMessageVisibility` is the heartbeat, `maxReceiveCount` + a redrive policy is `max_attempts` + the dead-letter status, and the DLQ console redrive is `POST /api/jobs/:id/retry`. What you lose against this toy: no `ORDER BY priority`, no per-account fairness (SQS is FIFO-per-message-group or nothing), and no SQL query over queue state — "show me every dead job with its last error" becomes a separate table you maintain yourself.
+- **On GCP the same role is Cloud Tasks or Pub/Sub.** **Cloud Tasks** when you want this app's shape (a task targets an HTTP endpoint, has a schedule time = `run_at`, per-queue rate and concurrency caps ≈ a crude fairness control, automatic retry with configurable backoff = `backoffMs`); **Pub/Sub** when consumers pull a stream — its ack deadline is the lease (`modifyAckDeadline` = heartbeat), and a dead-letter topic after N delivery attempts is the `dead` status.
+- **Workers stop being a `setInterval`.** On AWS the poll loop disappears into a **Lambda event source mapping** on the queue (concurrency limit ≈ `concurrency`), or stays a long-polling loop in an ECS/Fargate service when jobs outlive Lambda's 15-minute cap. On GCP: Pub/Sub push into **Cloud Run** (Cloud Run's max-instances is your concurrency cap), or a pull loop in a Cloud Run worker pool / GKE deployment.
+- **What survives the migration untouched: idempotent handlers.** Both SQS and Pub/Sub are at-least-once, exactly like this queue — the `beginSending` status-claim discipline is the part you keep no matter which broker you buy. FIFO SQS and Pub/Sub's exactly-once-delivery mode narrow the duplicate window; neither removes the need for a receiver-side guard once a side effect leaves the broker's transaction.
+- **When to keep Postgres anyway.** The core concepts above already say it: teams reach for SQS/Pub/Sub long before volume demands it. A Postgres queue keeps jobs and business data in one transactional boundary — the enqueue in `POST /api/messages` is atomic with the message row, which no external broker can offer without reintroducing the outbox pattern in front of itself. The honest production trigger to move: claim contention you can measure, or needing the broker's fan-out/ordering features, not fashion.
+
 ## Try it
 
 Requires `jobs` migrated (`npm run migrate`) and a fake upstream to receive deliveries — a bare `node:http` server that just logs what it gets:
