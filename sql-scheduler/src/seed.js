@@ -25,24 +25,29 @@ async function seedHistoricalRun(scheduleId, occurrenceAt, lagMs, status, error)
   await runsRepo.finish(pool, run.id, { status, error })
 }
 
-async function seed() {
-  await migrate(pool)
-
+async function seedAccounts() {
   const parisAccount = await accountsRepo.create(pool, { name: 'Lumen Media (Paris)', timezone: 'Europe/Paris' })
   const nyAccount = await accountsRepo.create(pool, { name: 'Northwind Press (New York)', timezone: 'America/New_York' })
   const tokyoAccount = await accountsRepo.create(pool, { name: 'Sora Studio (Tokyo)', timezone: 'Asia/Tokyo' })
+  return { parisAccount, nyAccount, tokyoAccount }
+}
 
+async function seedSchedules({ parisAccount, nyAccount, tokyoAccount }) {
   const intervalSchedule = await seedSchedule({ account: parisAccount, name: 'social-refresh', cadence: 'every 15m', catchupPolicy: 'skip' })
   await seedSchedule({ account: nyAccount, name: 'morning-digest', cadence: 'daily at 08:00', catchupPolicy: 'all' })
   await seedSchedule({ account: tokyoAccount, name: 'weekly-roundup', cadence: 'weekly on mon,thu at 09:00', catchupPolicy: 'none' })
   const failingSchedule = await seedSchedule({ account: parisAccount, name: 'broken-publisher', cadence: 'every 15m', catchupPolicy: 'skip' })
+  return { intervalSchedule, failingSchedule }
+}
 
-  const now = Date.now()
+async function seedIntervalHistory(intervalSchedule, now) {
   for (let i = 10; i >= 1; i--) {
     const occurrenceAt = new Date(now - i * 15 * 60 * 1000)
     await seedHistoricalRun(intervalSchedule.id, occurrenceAt, 3000 + Math.round(Math.random() * 4000), 'success', null)
   }
+}
 
+async function seedFailingHistory(failingSchedule, now) {
   for (let i = 8; i >= 1; i--) {
     const occurrenceAt = new Date(now - i * 15 * 60 * 1000)
     const failed = i % 4 !== 0
@@ -54,7 +59,9 @@ async function seed() {
       failed ? 'upstream publish endpoint returned 500' : null
     )
   }
+}
 
+async function seedAlertRules() {
   await alertRulesRepo.create(pool, {
     kind: 'run_failure_rate',
     threshold: 0.5,
@@ -73,13 +80,22 @@ async function seed() {
   })
   await alertRulesRepo.create(pool, {
     kind: 'scheduling_lag',
-    threshold: 30,
+    threshold: 2,
     windowSeconds: 3600,
-    forEvaluations: 2,
+    forEvaluations: 1,
     cooldownSeconds: 300,
     channel: 'https://example.com/webhooks/scheduler-alerts'
   })
+}
 
+async function seed() {
+  await migrate(pool)
+  const accounts = await seedAccounts()
+  const { intervalSchedule, failingSchedule } = await seedSchedules(accounts)
+  const now = Date.now()
+  await seedIntervalHistory(intervalSchedule, now)
+  await seedFailingHistory(failingSchedule, now)
+  await seedAlertRules()
   console.log('seeded 3 accounts, 4 schedules (one per cadence form, plus a deliberately failing one), 18 historical runs, 3 alert rules')
   await pool.end()
 }

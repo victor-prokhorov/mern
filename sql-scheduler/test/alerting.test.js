@@ -62,6 +62,32 @@ describe('alerting rules: pure predicates', () => {
   })
 })
 
+describe('alerts schema', () => {
+  useTestDb()
+
+  it('rejects a state outside pending/firing/resolved at the database, not just in application code', async () => {
+    const rule = await createRuleFixture()
+
+    let caughtError = null
+
+    try {
+      await alertsRepo.create(pool, {
+        ruleId: rule.id,
+        subject: 'schedule:junk',
+        state: 'not-a-real-state',
+        consecutiveBreaches: 1,
+        consecutiveClears: 0,
+        occurrences: 1
+      })
+    } catch (err) {
+      caughtError = err
+    }
+
+    expect(caughtError).to.not.equal(null)
+    expect(caughtError.code).to.equal('23514')
+  })
+})
+
 describe('alert lifecycle', () => {
   useTestDb()
 
