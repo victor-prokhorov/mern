@@ -14,9 +14,17 @@ export async function findById(client, id) {
   return rows[0] || null
 }
 
+export async function beginSending(client, id) {
+  const { rows } = await client.query(
+    "UPDATE messages SET status = 'sending' WHERE id = $1 AND status IN ('pending', 'sending') RETURNING id",
+    [id]
+  )
+  return rows.length > 0
+}
+
 export async function markSent(client, id) {
   const { rows } = await client.query(
-    "UPDATE messages SET status = 'sent', sent_at = now() WHERE id = $1 AND status = 'pending' RETURNING id",
+    "UPDATE messages SET status = 'sent', sent_at = now() WHERE id = $1 AND status = 'sending' RETURNING id",
     [id]
   )
   return rows.length > 0
@@ -24,7 +32,7 @@ export async function markSent(client, id) {
 
 export async function markFailed(client, id) {
   const { rows } = await client.query(
-    "UPDATE messages SET status = 'failed' WHERE id = $1 AND status = 'pending' RETURNING id",
+    "UPDATE messages SET status = 'failed' WHERE id = $1 AND status IN ('pending', 'sending') RETURNING id",
     [id]
   )
   return rows.length > 0

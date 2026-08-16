@@ -36,6 +36,8 @@ export async function getMessage({ messageId }) {
 
 export async function deliverMessage(job) {
   const { messageId, recipient, body, upstreamUrl } = job.payload
+  const claimed = await messagesRepo.beginSending(pool, messageId)
+  if (!claimed) return false
   const upstreamResponse = await fetch(upstreamUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
