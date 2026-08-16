@@ -5,32 +5,37 @@ function defaultSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function runStepWithRetry(pool, sagaId, step, impl, context, { backoff, sleep }) {
+async function attemptWithRetry(pool, step, fn, { backoff, sleep }) {
   let attempt = step.attempts
   for (;;) {
     try {
-      await impl.action({ pool, sagaId, context })
-      await sagaRepo.setStepStatus(pool, step.id, 'done')
+      await fn()
       return { ok: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       await sagaRepo.recordAttempt(pool, step.id, message)
       attempt += 1
-      if (attempt >= step.max_attempts) {
-        await sagaRepo.setStepStatus(pool, step.id, 'failed')
-        return { ok: false, error: message }
-      }
+      if (attempt >= step.max_attempts) return { ok: false, error: message }
       await sleep(backoffMs(attempt, backoff))
     }
   }
 }
 
-async function compensate(pool, sagaId, doneStack, registry, context) {
+async function runStepWithRetry(pool, sagaId, step, impl, context, opts) {
+  const outcome = await attemptWithRetry(pool, step, () => impl.action({ pool, sagaId, context }), opts)
+  await sagaRepo.setStepStatus(pool, step.id, outcome.ok ? 'done' : 'failed')
+  return outcome
+}
+
+async function compensate(pool, sagaId, doneStack, registry, context, opts) {
   await sagaRepo.setSagaStatus(pool, sagaId, 'compensating')
   for (let i = doneStack.length - 1; i >= 0; i--) {
     const step = doneStack[i]
     const impl = registry.get(step.name)
-    if (impl && impl.compensate) await impl.compensate({ pool, sagaId, context })
+    if (impl && impl.compensate) {
+      const outcome = await attemptWithRetry(pool, step, () => impl.compensate({ pool, sagaId, context }), opts)
+      if (!outcome.ok) return
+    }
     await sagaRepo.setStepStatus(pool, step.id, 'compensated')
   }
   await sagaRepo.setSagaStatus(pool, sagaId, 'compensated')
@@ -44,7 +49,7 @@ export async function runSaga(pool, { sagaId, registry, backoff = {}, sleep = de
   const steps = await sagaRepo.listSteps(pool, sagaId)
   if (saga.status === 'compensating') {
     const doneCompensatable = steps.filter((step) => step.kind === 'compensatable' && step.status === 'done')
-    await compensate(pool, sagaId, doneCompensatable, registry, context)
+    await compensate(pool, sagaId, doneCompensatable, registry, context, { backoff, sleep })
     return sagaRepo.findSaga(pool, sagaId)
   }
   const compensatableDone = []
@@ -62,7 +67,7 @@ export async function runSaga(pool, { sagaId, registry, backoff = {}, sleep = de
       continue
     }
     if (step.kind === 'compensatable') {
-      await compensate(pool, sagaId, compensatableDone, registry, context)
+      await compensate(pool, sagaId, compensatableDone, registry, context, { backoff, sleep })
       return sagaRepo.findSaga(pool, sagaId)
     }
     await sagaRepo.setSagaStatus(pool, sagaId, 'failed')
