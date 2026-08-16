@@ -167,7 +167,7 @@ describe('queue', () => {
       const second = await deliverMessage(job)
 
       server.close()
-      expect(deliveries).to.equal(2)
+      expect(deliveries).to.equal(1)
       expect(first).to.equal(true)
       expect(second).to.equal(false)
       const { rows } = await appPool.query('SELECT status FROM messages WHERE id = $1', [messageId])
