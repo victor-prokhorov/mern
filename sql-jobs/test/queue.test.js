@@ -102,7 +102,7 @@ describe('queue', () => {
       const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 5 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
       await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'upstream responded 500', random: () => 0 })
-      const [claim2] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
       const reaped = await jobsRepo.reapExpired(pool)
@@ -167,7 +167,7 @@ describe('queue', () => {
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
       let deliveries = 0
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         deliveries += 1
         res.writeHead(200)
         res.end()
@@ -200,7 +200,7 @@ describe('queue', () => {
       const { deliverMessage } = await import('../src/services/messages.js')
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         res.writeHead(500)
         res.end()
       })
@@ -236,7 +236,7 @@ describe('queue', () => {
       const { deliverMessage } = await import('../src/services/messages.js')
       const { pool: appPool } = await import('../src/db.js')
       const http = await import('node:http')
-      const server = http.createServer((req, res) => {
+      const server = http.createServer((_req, res) => {
         res.writeHead(500)
         res.end()
       })
