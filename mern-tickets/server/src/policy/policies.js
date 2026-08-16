@@ -56,7 +56,7 @@ export const policies = [
     effect: 'deny',
     actions: ['ticket:transition'],
     roles: ['reporter', 'agent'],
-    reason: 'only an admin may transition a closed ticket',
+    reason: 'a closed ticket may not be transitioned',
     condition: ticketIsClosed
   }
 ]
