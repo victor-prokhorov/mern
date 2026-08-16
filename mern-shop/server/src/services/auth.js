@@ -40,7 +40,14 @@ export async function refresh(rawRefreshToken) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
   const now = new Date()
   const consumed = await sessions.consumeToken(tokenHash, now)
-  if (consumed) return completeRotation(consumed, now)
+  if (consumed) {
+    const user = await users.findById(consumed.user)
+    if (!user || user.blockedAt || (await blocks.isBlockedEmail(user.email))) {
+      await sessions.revokeFamily(consumed.familyId, now)
+      throw new UnauthorizedError('invalid refresh token')
+    }
+    return completeRotation(consumed, now)
+  }
   const existing = await sessions.findByTokenHash(tokenHash)
   if (existing && existing.usedAt && !existing.revokedAt) await sessions.revokeFamily(existing.familyId, now)
   throw new UnauthorizedError('invalid refresh token')

@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb'
 import * as blocksRepo from '../repositories/blocks.js'
+import * as sessions from '../repositories/sessions.js'
 import { BadRequestError, NotFoundError } from '../middleware/error.js'
 
 const GMAIL_DOMAINS = ['gmail.com', 'googlemail.com']
@@ -49,8 +50,9 @@ export async function removeBlock(id) {
   return entry
 }
 
-export function blockUser(userId, reason) {
-  return blocksRepo.blockUser(userId, reason)
+export async function blockUser(userId, reason) {
+  await blocksRepo.blockUser(userId, reason)
+  await sessions.revokeAllForUser(userId, new Date())
 }
 
 export function unblockUser(userId) {
