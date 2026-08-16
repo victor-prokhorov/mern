@@ -5,8 +5,10 @@ import app from '../src/app.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
 import User from '../src/models/user.js'
+import Session from '../src/models/session.js'
 import { seedUser, seedUsers } from '../src/seed.js'
 import { normalizeEmail, blockUser, unblockUser } from '../src/services/blocks.js'
+import { hashRefreshToken } from '../src/session/tokens.js'
 import { useTestDb, loginAs } from './helpers.js'
 
 use(chaiHttp)
@@ -49,6 +51,36 @@ describe('user blocklist', () => {
     const res = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
 
     expect(res).to.have.status(200)
+  })
+
+  it('blocking a user revokes their active sessions', async () => {
+    const user = await seedUsers()
+    const session = await loginAs(app, seedUser.email, seedUser.password)
+
+    await blockUser(user._id, 'fraud')
+
+    const stored = await Session.findOne({ tokenHash: hashRefreshToken(session.refreshToken) })
+    expect(stored.revokedAt).to.not.equal(null)
+  })
+
+  it('rejects a refresh from a blocked user with an active session', async () => {
+    const user = await seedUsers()
+    const session = await loginAs(app, seedUser.email, seedUser.password)
+    await blockUser(user._id, 'fraud')
+
+    const res = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: session.refreshToken })
+
+    expect(res).to.have.status(401)
+  })
+
+  it('rejects a refresh when the account email lands on the pattern blocklist after login', async () => {
+    await seedUsers()
+    const session = await loginAs(app, seedUser.email, seedUser.password)
+    await request.execute(app).post('/api/blocks').set('x-admin-token', 'test-admin-token').send({ type: 'email', value: seedUser.email, reason: 'known fraud' })
+
+    const res = await request.execute(app).post('/api/auth/refresh').send({ refreshToken: session.refreshToken })
+
+    expect(res).to.have.status(401)
   })
 
   it('rejects an order from a blocked user account', async () => {
