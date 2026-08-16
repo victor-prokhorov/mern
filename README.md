@@ -20,10 +20,11 @@ toy skips, and further reading.
 | [sql-scheduler](sql-scheduler/) | Postgres-backed scheduling and alarming. Timezone-correct cadences, exactly-once ticking, catch-up policies, and alert deduplication/hysteresis. Server only. |
 | [mern-cache](mern-cache/) | Product-catalogue read cache over a slow MongoDB origin. Cache-aside, TTL vs invalidation, negative caching, and single-flight stampede protection, all hand-built. Server only. |
 | [sql-replica](sql-replica/) | Postgres primary/replica simulation. Replication lag, read-after-write consistency, primary/replica read routing, sticky windows and write-position tokens, monotonic reads. Server only. |
+| [sql-saga](sql-saga/) | Postgres orchestrated saga. Multi-service transaction with compensation, the pivot/compensatable/retryable taxonomy, per-step retry budgets, and idempotent steps. Server only. |
 
 ## Topics
 
-Twenty-eight guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
+Twenty-nine guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
 
 | Topic | Where |
 |---|---|
@@ -54,6 +55,7 @@ Twenty-eight guides, each beside the code it describes — mutation testing coun
 | Alert dedup, hysteresis, cooldown | [sql-scheduler/src/alerting](sql-scheduler/src/alerting/README.md) |
 | Caching: cache-aside, TTL vs invalidation, single-flight, HTTP caching | [mern-cache/src/cache](mern-cache/server/src/cache/README.md) |
 | Replication, read-after-write, monotonic reads | [sql-replica/src/replication](sql-replica/src/replication/README.md) |
+| Sagas, compensation, distributed transactions | [sql-saga/src/saga](sql-saga/src/saga/README.md) |
 | Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
@@ -79,6 +81,7 @@ The mappings, in one table:
 | Keyset pagination ([sql-ledger](sql-ledger/src/pagination/README.md)) | DynamoDB `LastEvaluatedKey` | Firestore `startAfter` |
 | Read cache: cache-aside, TTL, single-flight ([mern-cache](mern-cache/server/src/cache/README.md)) | ElastiCache/MemoryDB, DAX, CloudFront (request collapsing) | Memorystore, Cloud CDN |
 | Primary/replica read routing, read-after-write ([sql-replica](sql-replica/src/replication/README.md)) | RDS/Aurora read replicas, reader endpoint, `aurora_replica_read_consistency`, RDS Proxy | Cloud SQL read replicas, AlloyDB read pools |
+| Orchestrated saga: compensation, pivot, retries ([sql-saga](sql-saga/src/saga/README.md)) | Step Functions (`Retry`/`Catch`), Temporal on ECS/EKS | Cloud Workflows, Temporal on GKE |
 
 On database choice, the short version this repo teaches by construction:
 `sql-ledger` exists because a money ledger needs multi-row transactions and
@@ -96,7 +99,7 @@ spans rows does not.
 
 - Node 20+
 - MongoDB on `mongodb://127.0.0.1:27017` for the three MERN apps
-- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger`, `sql-jobs`, `sql-scheduler`, and `sql-replica`
+- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger`, `sql-jobs`, `sql-scheduler`, `sql-replica`, and `sql-saga`
 
 Neither installed locally? Run them in Docker:
 
@@ -128,9 +131,9 @@ One thing `.env.example` alone does not tell you:
 
 Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
 `sql-ledger` 5002, `sql-jobs` 5004, `sql-scheduler` 5005, `mern-cache` 5006,
-`sql-replica` 5007, `mern-shop`'s Vite client 5173. Each app's `.env.example`
-ships its own distinct default, so any two (or all eight) can run side by side
-without an `EADDRINUSE` —
+`sql-replica` 5007, `sql-saga` 5008, `mern-shop`'s Vite client 5173. Each app's
+`.env.example` ships its own distinct default, so any two (or all nine) can run
+side by side without an `EADDRINUSE` —
 which several guides' "Try it" sections already assumed when they point at each other.
 
 `mern-shop` also has a client:
@@ -148,7 +151,7 @@ addition to) fixtures. `sql-ledger` has no seed script; `sql-jobs` and
 `sql-scheduler` have one.
 
 ```bash
-cd sql-ledger   # or sql-jobs / sql-scheduler / sql-replica
+cd sql-ledger   # or sql-jobs / sql-scheduler / sql-replica / sql-saga
 npm install
 cp .env.example .env
 npm run migrate
@@ -164,11 +167,11 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-493 tests across eight apps (125 shop, 144 tickets, 58 movies, 14 cache,
-46 ledger, 26 jobs, 63 scheduler, 17 replica), plus a mutation-testing tool
-under `tools/mutation` that audits how much those tests actually prove.
+513 tests across nine apps (125 shop, 144 tickets, 58 movies, 14 cache,
+46 ledger, 26 jobs, 63 scheduler, 17 replica, 20 saga), plus a mutation-testing
+tool under `tools/mutation` that audits how much those tests actually prove.
 The MERN suites need a reachable MongoDB; `sql-ledger`, `sql-jobs`,
-`sql-scheduler` and `sql-replica` need a reachable Postgres and each creates its own
+`sql-scheduler`, `sql-replica` and `sql-saga` need a reachable Postgres and each creates its own
 `<app>_test` database on first run.
 
 ## Mutation testing
