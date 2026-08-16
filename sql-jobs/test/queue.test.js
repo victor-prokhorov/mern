@@ -21,20 +21,23 @@ describe('queue', () => {
   })
 
   describe('claiming', () => {
-    it('two workers claiming concurrently partition the ready rows, not just avoid duplicates', async () => {
+    it('a claim never locks more of the ready pool than it actually takes, so a second claim run right after still gets its full share', async () => {
       for (let i = 0; i < 20; i++) await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
-      await Promise.all([pool.query('SELECT 1'), pool.query('SELECT 1')])
+      const holder = new Pool({ connectionString: process.env.DATABASE_URL })
+      const client = await holder.connect()
+      await client.query('BEGIN')
 
-      const [batchA, batchB] = await Promise.all([
-        jobsRepo.claimJobs(pool, { workerId: 'a', limit: 10, leaseMs: 5000 }),
-        jobsRepo.claimJobs(pool, { workerId: 'b', limit: 10, leaseMs: 5000 })
-      ])
+      const held = await jobsRepo.claimJobs(client, { workerId: 'a', limit: 10, leaseMs: 5000 })
+      const secondBatch = await jobsRepo.claimJobs(pool, { workerId: 'b', limit: 10, leaseMs: 5000 })
 
-      const idsA = batchA.map((j) => j.id)
-      const idsB = batchB.map((j) => j.id)
-      expect(idsA.length).to.equal(10)
-      expect(idsB.length).to.equal(10)
-      expect(idsA.some((id) => idsB.includes(id))).to.equal(false)
+      await client.query('ROLLBACK')
+      client.release()
+      await holder.end()
+      const idsHeld = held.map((j) => j.id)
+      const idsSecond = secondBatch.map((j) => j.id)
+      expect(held.length).to.equal(10)
+      expect(secondBatch.length).to.equal(10)
+      expect(idsHeld.some((id) => idsSecond.includes(id))).to.equal(false)
     })
 
     it('SKIP LOCKED lets a second claim return other rows promptly while one row is held open in an uncommitted transaction', async () => {
