@@ -18,10 +18,11 @@ toy skips, and further reading.
 | [sql-ledger](sql-ledger/) | Postgres double-entry ledger. Transactional outbox, zero-downtime expand-contract migrations, keyset pagination. Server only. |
 | [sql-jobs](sql-jobs/) | Postgres async job queue. Fenced leases, the reaper, backoff/jitter, dead-lettering, per-account fairness. Server only. |
 | [sql-scheduler](sql-scheduler/) | Postgres-backed scheduling and alarming. Timezone-correct cadences, exactly-once ticking, catch-up policies, and alert deduplication/hysteresis. Server only. |
+| [mern-cache](mern-cache/) | Product-catalogue read cache over a slow MongoDB origin. Cache-aside, TTL vs invalidation, negative caching, and single-flight stampede protection, all hand-built. Server only. |
 
 ## Topics
 
-Twenty-six guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
+Twenty-seven guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
 
 | Topic | Where |
 |---|---|
@@ -50,6 +51,7 @@ Twenty-six guides, each beside the code it describes — mutation testing counts
 | Timezone-correct cadences and DST | [sql-scheduler/src/cadence](sql-scheduler/src/cadence/README.md) |
 | Exactly-once ticking, catch-up policies, drift | [sql-scheduler/src/scheduler](sql-scheduler/src/scheduler/README.md) |
 | Alert dedup, hysteresis, cooldown | [sql-scheduler/src/alerting](sql-scheduler/src/alerting/README.md) |
+| Caching: cache-aside, TTL vs invalidation, single-flight, HTTP caching | [mern-cache/src/cache](mern-cache/server/src/cache/README.md) |
 | Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
@@ -73,6 +75,7 @@ The mappings, in one table:
 | Logs / metrics / probes / shutdown ([mern-tickets](mern-tickets/server/src/observability/README.md)) | CloudWatch, X-Ray, ALB health checks | Cloud Logging/Monitoring/Trace, Cloud Run probes |
 | Fan-out notifications ([mern-movies](mern-movies/server/src/notifications/README.md)) | SNS→SQS, SES/Pinpoint | Pub/Sub multi-subscription, FCM |
 | Keyset pagination ([sql-ledger](sql-ledger/src/pagination/README.md)) | DynamoDB `LastEvaluatedKey` | Firestore `startAfter` |
+| Read cache: cache-aside, TTL, single-flight ([mern-cache](mern-cache/server/src/cache/README.md)) | ElastiCache/MemoryDB, DAX, CloudFront (request collapsing) | Memorystore, Cloud CDN |
 
 On database choice, the short version this repo teaches by construction:
 `sql-ledger` exists because a money ledger needs multi-row transactions and
@@ -121,10 +124,10 @@ One thing `.env.example` alone does not tell you:
   [mern-shop/README.md](mern-shop/README.md) for the table.
 
 Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
-`sql-ledger` 5002, `sql-jobs` 5004, `sql-scheduler` 5005, `mern-shop`'s Vite
-client 5173. Each app's `.env.example` ships its own distinct default, so any
-two (or all six) can run side by side without an `EADDRINUSE` — which several
-guides' "Try it" sections already assumed when they point at each other.
+`sql-ledger` 5002, `sql-jobs` 5004, `sql-scheduler` 5005, `mern-cache` 5006,
+`mern-shop`'s Vite client 5173. Each app's `.env.example` ships its own distinct
+default, so any two (or all seven) can run side by side without an `EADDRINUSE` —
+which several guides' "Try it" sections already assumed when they point at each other.
 
 `mern-shop` also has a client:
 
@@ -157,9 +160,9 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-462 tests across six apps (125 shop, 144 tickets, 58 movies, 46 ledger,
-26 jobs, 63 scheduler), plus a mutation-testing tool under `tools/mutation`
-that audits how much those tests actually prove.
+476 tests across seven apps (125 shop, 144 tickets, 58 movies, 14 cache,
+46 ledger, 26 jobs, 63 scheduler), plus a mutation-testing tool under
+`tools/mutation` that audits how much those tests actually prove.
 The MERN suites need a reachable MongoDB; `sql-ledger`, `sql-jobs` and
 `sql-scheduler` need a reachable Postgres and each creates its own
 `<app>_test` database on first run.
