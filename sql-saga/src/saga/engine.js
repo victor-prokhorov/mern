@@ -42,6 +42,11 @@ export async function runSaga(pool, { sagaId, registry, backoff = {}, sleep = de
   if (saga.status === 'completed' || saga.status === 'compensated') return sagaRepo.findSaga(pool, sagaId)
   const context = saga.context
   const steps = await sagaRepo.listSteps(pool, sagaId)
+  if (saga.status === 'compensating') {
+    const doneCompensatable = steps.filter((step) => step.kind === 'compensatable' && step.status === 'done')
+    await compensate(pool, sagaId, doneCompensatable, registry, context)
+    return sagaRepo.findSaga(pool, sagaId)
+  }
   const compensatableDone = []
   for (const step of steps) {
     if (step.status === 'done') {
