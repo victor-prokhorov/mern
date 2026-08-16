@@ -20,7 +20,7 @@ toy skips, and further reading.
 
 ## Topics
 
-Twenty-one guides, each beside the code it describes.
+Twenty-two guides, each beside the code it describes.
 
 | Topic | Where |
 |---|---|
@@ -54,7 +54,7 @@ Several topics are treated more than once, from different angles, and the pairs 
 
 - Node 20+
 - MongoDB on `mongodb://127.0.0.1:27017` for the three MERN apps
-- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger`
+- PostgreSQL on `postgres://postgres:postgres@127.0.0.1:5432` for `sql-ledger` and `sql-jobs`
 
 Neither installed locally? Run them in Docker:
 
@@ -85,10 +85,10 @@ One thing `.env.example` alone does not tell you:
   [mern-shop/README.md](mern-shop/README.md) for the table.
 
 Ports, in one place: `mern-shop` 5000, `mern-tickets` 5001, `mern-movies` 5003,
-`sql-ledger` 5002, `mern-shop`'s Vite client 5173. Each app's `.env.example`
-now ships its own distinct default, so any two (or all four) can run side by
-side without an `EADDRINUSE` — which several guides' "Try it" sections
-already assumed when they point at each other.
+`sql-ledger` 5002, `sql-jobs` 5004, `mern-shop`'s Vite client 5173. Each app's
+`.env.example` now ships its own distinct default, so any two (or all five)
+can run side by side without an `EADDRINUSE` — which several guides' "Try it"
+sections already assumed when they point at each other.
 
 `mern-shop` also has a client:
 
@@ -119,11 +119,11 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-369 tests across the four apps (124 shop, 141 tickets, 58 movies, 46 ledger), plus a
-mutation-testing tool under `tools/mutation` that audits how much those tests
-actually prove.
-The MERN suites need a reachable MongoDB; `sql-ledger` needs a reachable
-Postgres and creates its own `ledger_test` database on first run.
+392 tests across five apps (124 shop, 141 tickets, 58 movies, 46 ledger,
+23 jobs), plus a mutation-testing tool under `tools/mutation` that audits how
+much those tests actually prove.
+The MERN suites need a reachable MongoDB; `sql-ledger` and `sql-jobs` need a
+reachable Postgres and each creates its own `<app>_test` database on first run.
 
 ## Mutation testing
 
@@ -139,7 +139,8 @@ node cli.js --app mern-shop --files src/middleware/auth.js --max 20 --seed demo
 ```
 
 See [tools/mutation/README.md](tools/mutation/README.md) for how it works and
-what running it against all four apps found.
+what running it against mern-shop, mern-tickets, mern-movies, and sql-ledger
+found — that audit predates `sql-jobs` and has not been run against it.
 
 ## House rules
 
