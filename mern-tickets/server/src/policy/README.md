@@ -8,7 +8,7 @@ A small policy decision point: given who is asking, what they want to do, and to
 
 `decide(ruleSet, request)` (`src/policy/engine.js:11`) is the pure decision function: it filters `ruleSet` down to the rules that match the request (`ruleMatches`, `src/policy/engine.js:4`), then applies **deny-overrides** — if any matching rule denies, the result is deny regardless of any matching permit (`src/policy/engine.js:13-14`) — and falls through to **default deny** if nothing matched at all (`src/policy/engine.js:17`).
 
-`authorize(request)` (`src/policy/engine.js:20`) is the enforcement wrapper: it calls `decide` against the real policy set in `policies.js`, logs the ruleId and reason to the server console on a deny, and throws `ForbiddenError('forbidden')` — a generic message, because the caller does not get to learn which rule stopped them or why (`src/policy/engine.js:22-24`).
+`authorize(request)` (`src/policy/engine.js:21`) is the enforcement wrapper: it calls `decide` against the real policy set in `policies.js`, logs an `authorization denied` entry through the structured logger on a deny — `action`, `ruleId` and `reason` as fields, with the request's `requestId`/`userId`/`route` attached by the observability context (see [`../observability/README.md`](../observability/README.md)) — and throws `ForbiddenError('forbidden')` — a generic message, because the caller does not get to learn which rule stopped them or why (`src/policy/engine.js:24-25`).
 
 Every mutating and reading ticket service function calls `authorize` before touching data: `create` (`src/services/tickets.js:35`), `get` (`src/services/tickets.js:69`), `transitionStatus` (`src/services/tickets.js:88`), `assign` (`src/services/tickets.js:100`), `addComment` (`src/services/tickets.js:112`). Controllers never check a role themselves — they pass `req.subject` (set by `identify`, `src/middleware/identify.js`) straight through to the service, which builds the `{ subject, action, resource, context }` request and asks the engine. The `context` slot exists but is always `{}`: NIST's ABAC definition includes environment conditions (time of day, device posture, network location) as a first-class input, and this engine has the shape for them and uses none.
 
@@ -69,7 +69,11 @@ curl -s -X POST http://localhost:5001/api/tickets -H 'Content-Type: application/
 curl -s http://localhost:5001/api/tickets/<ticket id from above> -H 'x-user-id: <rae id>'
 ```
 
-The last call returns 403 `{"error":"forbidden"}` — rae is a reporter and this ticket belongs to sam. The server console shows the line the caller does not get: `authz denied action=ticket:read ruleId=null reason=default deny: no rule matched the request`.
+The last call returns 403 `{"error":"forbidden"}` — rae is a reporter and this ticket belongs to sam. The server log shows the line the caller does not get, as a structured entry carrying the request's correlation fields:
+
+```json
+{"level":"error","msg":"authorization denied","time":"...","requestId":"...","userId":"<rae id>","route":"/api/tickets/:id","action":"ticket:read","ruleId":null,"reason":"default deny: no rule matched the request"}
+```
 
 ## Further reading
 
