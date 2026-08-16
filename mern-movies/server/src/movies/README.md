@@ -93,9 +93,12 @@ At that point this app has nothing to catch it: `errorHandler`
 (`server/src/middleware/error.js:22-28`) has branches for
 `ValidationError`, `CastError` and any error carrying a `status`, and
 code `11000` matches none of them, so it falls through to a generic
-500. MongoDB's own retryable-writes machinery does not help either — it
-retries once for transient network errors and replica-set elections,
-not for application-level errors like a duplicate key. Compare
+500. MongoDB's own retryable-writes machinery does not help either,
+twice over: retryable writes exist only against a replica set or
+sharded cluster — on the standalone `mongod` this repo runs there is no
+retry at all — and even where they exist the driver retries once, for
+transient network errors and replica-set elections, never for
+application-level errors like a duplicate key. Compare
 `../../../../mern-shop/server/src/rateLimit/README.md`, where the same
 situation arises on a filter that genuinely can collide and the
 repository catches `11000` and retries once.
@@ -260,8 +263,13 @@ curl -X POST http://localhost:5003/api/watches \
 Rating the same movie a second time with a different `value` returns
 201 again, with the stored value replaced rather than a second row
 created — that is the upsert at
-`server/src/repositories/ratings.js:3-9`. Creating a movie as a
-non-admin user returns 401.
+`server/src/repositories/ratings.js:3-9`. Note the status is
+unconventional: 201 means "created", and an upsert that replaced an
+existing row is semantically an update, where 200 would be the usual
+answer. Creating a movie as a non-admin user returns 401 — also
+looser than the convention, since 401 means unauthenticated and 403 is
+the status for a caller who is identified but not permitted; the code
+keeps 401 because other guides reference this behaviour as is.
 
 ## Further reading
 
@@ -286,8 +294,10 @@ running MongoDB 7.0 rather than taken on trust.
   upserts, ensure the filter fields are uniquely indexed.
 - [Retryable Writes](https://www.mongodb.com/docs/manual/core/retryable-writes/)
   — which operations drivers retry, how many times (once, by default),
-  and the boundary that matters here: transient network errors and
-  elections, never application-level errors like a duplicate key.
+  the topology requirement (replica set or sharded cluster, never a
+  standalone), and the boundary that matters here: transient network
+  errors and elections, never application-level errors like a
+  duplicate key.
 - [Transactions](https://www.mongodb.com/docs/manual/core/transactions/)
   — required reading before assuming you can wrap two collection writes
   atomically: replica set or sharded cluster only, plus MongoDB's own
