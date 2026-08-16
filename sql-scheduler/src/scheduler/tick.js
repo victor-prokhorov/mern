@@ -58,13 +58,25 @@ async function processSchedule(client, schedule, now) {
   return { scheduleId: schedule.id, ran: 1, nextRunAt }
 }
 
+async function recordScheduleFailure(pool, schedule, err) {
+  await withTransaction(async (client) => {
+    const run = await runsRepo.createGuarded(client, { scheduleId: schedule.id, occurrenceAt: schedule.next_run_at })
+    if (run) await runsRepo.finish(client, run.id, { status: 'failure', error: err.message })
+  })
+}
+
 export async function runDueSchedules(pool) {
   const now = await schedulesRepo.currentTime(pool)
   const due = await schedulesRepo.findDue(pool)
   const results = []
   for (const schedule of due) {
-    const result = await withTransaction((client) => processSchedule(client, schedule, now))
-    results.push(result)
+    try {
+      const result = await withTransaction((client) => processSchedule(client, schedule, now))
+      results.push(result)
+    } catch (err) {
+      await recordScheduleFailure(pool, schedule, err)
+      results.push({ scheduleId: schedule.id, ran: 0, error: err.message })
+    }
   }
   return results
 }

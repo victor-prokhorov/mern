@@ -129,6 +129,31 @@ describe('scheduler tick', () => {
     })
   })
 
+  describe('isolation between schedules', () => {
+    it('one schedule whose cadence blows up does not stop the tick from processing the others', async () => {
+      let healthyCalls = 0
+      registerHandler('healthy-report', async () => {
+        healthyCalls += 1
+        return { status: 'success' }
+      })
+      const dueAt = pastInstant(1000)
+      const poisoned = await createScheduleFixture({ name: 'poisoned-report', cadence: 'daily at 09:00', timezone: 'Not/AZone', nextRunAt: dueAt, catchupPolicy: 'skip' })
+      const healthy = await createScheduleFixture({ name: 'healthy-report', cadence: 'daily at 09:00', nextRunAt: dueAt, catchupPolicy: 'skip' })
+
+      await tick(pool)
+
+      const healthyRuns = await runsRepo.listByScheduleId(pool, healthy.id)
+      const poisonedRuns = await runsRepo.listByScheduleId(pool, poisoned.id)
+
+      expect(healthyCalls).to.equal(1)
+      expect(healthyRuns).to.have.length(1)
+      expect(healthyRuns[0].status).to.equal('success')
+      expect(poisonedRuns).to.have.length(1)
+      expect(poisonedRuns[0].status).to.equal('failure')
+      expect(poisonedRuns[0].error).to.not.equal(null)
+    })
+  })
+
   describe('drift', () => {
     it('anchors the next occurrence to the scheduled occurrence, not to when the slow run finished', async () => {
       registerHandler('slow-report', async () => {

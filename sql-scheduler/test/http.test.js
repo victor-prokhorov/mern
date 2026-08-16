@@ -51,6 +51,29 @@ describe('HTTP surface', () => {
     expect(res.status).to.equal(400)
   })
 
+  it('rejects a schedule with an invalid timezone, and never persists it, for every cadence form', async () => {
+    const account = (await httpAgent.post('/api/accounts').send({ name: 'Acme', timezone: 'Europe/Paris' })).body
+
+    const dailyRes = await httpAgent.post('/api/schedules').send({
+      accountId: account.id,
+      name: 'bad-zone-daily',
+      cadence: 'daily at 09:00',
+      timezone: 'Not/AZone'
+    })
+    const intervalRes = await httpAgent.post('/api/schedules').send({
+      accountId: account.id,
+      name: 'bad-zone-interval',
+      cadence: 'every 15m',
+      timezone: 'Not/AZone'
+    })
+
+    const listRes = await httpAgent.get('/api/schedules')
+
+    expect(dailyRes.status).to.equal(400)
+    expect(intervalRes.status).to.equal(400)
+    expect(listRes.body.schedules).to.have.length(0)
+  })
+
   it('rejects a schedule for a non-existent account', async () => {
     const res = await httpAgent.post('/api/schedules').send({
       accountId: 999999,

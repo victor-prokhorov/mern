@@ -1,5 +1,5 @@
 import { expect } from 'chai'
-import { parseCadence, nextOccurrence } from '../src/cadence/index.js'
+import { parseCadence, nextOccurrence, isValidTimeZone } from '../src/cadence/index.js'
 
 describe('parseCadence', () => {
   it('parses an interval in minutes', () => {
@@ -46,6 +46,22 @@ describe('parseCadence', () => {
 
   it('rejects a zero-length interval', () => {
     expect(() => parseCadence('every 0m')).to.throw(/invalid cadence/)
+  })
+})
+
+describe('isValidTimeZone', () => {
+  it('accepts a real IANA zone name', () => {
+    expect(isValidTimeZone('Europe/Paris')).to.equal(true)
+  })
+
+  it('rejects a string that is not a real zone name', () => {
+    expect(isValidTimeZone('Not/AZone')).to.equal(false)
+  })
+
+  it('rejects non-string input without throwing', () => {
+    expect(isValidTimeZone(null)).to.equal(false)
+    expect(isValidTimeZone(undefined)).to.equal(false)
+    expect(isValidTimeZone(42)).to.equal(false)
   })
 })
 

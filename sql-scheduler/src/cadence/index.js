@@ -1,5 +1,5 @@
 import { parseCadence } from './parse.js'
-import { zonedComponents, localToInstant, calendarDatePlusDays, weekdayOf } from './zonedTime.js'
+import { zonedComponents, localToInstant, calendarDatePlusDays, weekdayOf, isValidTimeZone } from './zonedTime.js'
 
 const MAX_ITERATIONS = 400
 
@@ -34,4 +34,4 @@ export function nextOccurrence({ cadence: cadenceInput, timezone, after }) {
   throw new Error(`nextOccurrence: unsupported cadence type ${cadence.type}`)
 }
 
-export { parseCadence }
+export { parseCadence, isValidTimeZone }

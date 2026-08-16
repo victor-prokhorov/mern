@@ -35,6 +35,16 @@ export function zonedComponents(timeZone, instant) {
   return partsToComponents(parts)
 }
 
+export function isValidTimeZone(timeZone) {
+  if (typeof timeZone !== 'string' || timeZone.length === 0) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function offsetMs(timeZone, instantMs) {
   const flooredMs = Math.floor(instantMs / 1000) * 1000
   const components = zonedComponents(timeZone, new Date(flooredMs))
