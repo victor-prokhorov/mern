@@ -17,7 +17,7 @@ export async function findById(client, id) {
 }
 
 export async function claimJobs(client, { workerId, kinds = null, limit = 1, leaseMs = 10000, perAccountLimit = null }) {
-  const lockLimit = Math.max(limit * 10, 100)
+  const lockLimit = perAccountLimit == null ? limit : limit * 5
   const { rows } = await client.query(
     `WITH locked AS (
        SELECT j.id, j.priority, j.run_at, j.payload ->> 'accountId' AS account_key
