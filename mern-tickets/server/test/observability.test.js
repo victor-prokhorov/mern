@@ -355,5 +355,31 @@ describe('observability', () => {
       expect(res.status).to.equal(200)
       expect(events).to.deep.equal(['not-ready', 'close-called', 'store-closed', 'exited'])
     })
+
+    it('stops sweeping idle connections once the drain window times out', async () => {
+      let requestArrived = false
+      const server = http.createServer(() => {
+        requestArrived = true
+      })
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const port = server.address().port
+      let sweeps = 0
+      const originalCloseIdle = server.closeIdleConnections.bind(server)
+      server.closeIdleConnections = () => {
+        sweeps += 1
+        originalCloseIdle()
+      }
+      const shutdown = createGracefulShutdown({ server, closeStore: async () => {}, setNotReady: () => {}, drainTimeoutMs: 100, exit: () => {} })
+      const pending = fetch(`http://127.0.0.1:${port}`).catch(() => {})
+      await waitUntil(() => requestArrived)
+
+      await shutdown()
+      const sweepsWhenDrainGaveUp = sweeps
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      expect(sweeps).to.equal(sweepsWhenDrainGaveUp)
+      server.closeAllConnections()
+      await pending
+    })
   })
 })
