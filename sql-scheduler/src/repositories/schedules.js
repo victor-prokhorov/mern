@@ -35,3 +35,11 @@ export async function updateAfterRun(client, id, { nextRunAt, lastRunAt }) {
 export async function setActive(client, id, active) {
   await client.query('UPDATE schedules SET active = $1 WHERE id = $2', [active, id])
 }
+
+export async function overdueSeconds(client, id) {
+  const { rows } = await client.query(
+    'SELECT GREATEST(EXTRACT(EPOCH FROM (now() - next_run_at)), 0) AS overdue_seconds FROM schedules WHERE id = $1',
+    [id]
+  )
+  return rows[0] ? Number(rows[0].overdue_seconds) : 0
+}

@@ -46,3 +46,25 @@ export async function listWithLag(client, { limit = 50 } = {}) {
   )
   return rows
 }
+
+export async function failureCounts(client, scheduleId, windowSeconds) {
+  const { rows } = await client.query(
+    `SELECT count(*) FILTER (WHERE status = 'failure') AS failures, count(*) AS total
+     FROM runs WHERE schedule_id = $1 AND occurrence_at >= now() - ($2 || ' seconds')::interval`,
+    [scheduleId, windowSeconds]
+  )
+  return { failures: Number(rows[0].failures), total: Number(rows[0].total) }
+}
+
+export async function maxLagSeconds(client, scheduleId, windowSeconds) {
+  const { rows } = await client.query(
+    `SELECT COALESCE(max(EXTRACT(EPOCH FROM (started_at - occurrence_at))), 0) AS lag_seconds
+     FROM runs WHERE schedule_id = $1 AND occurrence_at >= now() - ($2 || ' seconds')::interval`,
+    [scheduleId, windowSeconds]
+  )
+  return Number(rows[0].lag_seconds)
+}
+
+export async function setStartedAtForSeed(client, id, startedAt) {
+  await client.query('UPDATE runs SET started_at = $1 WHERE id = $2', [startedAt, id])
+}
