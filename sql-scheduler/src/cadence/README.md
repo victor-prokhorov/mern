@@ -101,8 +101,14 @@ iterations are ever expected to be needed — a weekly cadence needs at most 7.
 - **Autumn, the repeated hour, stated as a policy choice.** The reverse
   change jumps *backward* once — `Europe/Paris` at 03:00 local on the last
   Sunday of October becomes 02:00 again, so it is the hour *from* 02:00 *to*
-  03:00 that repeats: 03:00 itself occurs once, but every local time
-  strictly between 02:00 and 03:00 happens twice. `2024-10-27` was that day;
+  03:00 that repeats: every local time from 02:00:00 inclusive up to (but
+  not including) 03:00 happens twice — 02:00:00 itself included, since the
+  clock reads 02:00 once under summer time, an hour before the transition,
+  and again at the transition instant itself when the jump back lands on
+  it; 03:00 occurs once.
+  That half-open window is exactly the `[localAfter, localBefore)` range the
+  code classifies as `ambiguous-first` (`src/cadence/zonedTime.js:91`).
+  `2024-10-27` was that day;
   `02:30` local happened once at `00:30 UTC` (still summer time, `UTC+2`)
   and again at `01:30 UTC` (winter time, `UTC+1`). A cadence of
   `daily at 02:30` naively evaluated against both instants would create two
@@ -167,8 +173,21 @@ iterations are ever expected to be needed — a weekly cadence needs at most 7.
   (the cadence string and the timezone name), compute the instant fresh
   every time `nextOccurrence` is called, and never store a precomputed
   local time as if it were durable.** `schedules.next_run_at` is a
-  `TIMESTAMPTZ` — a cached instant, recomputed on every tick — never a local
-  time plus a zone.
+  `TIMESTAMPTZ` — a cached instant, never a local time plus a zone — but
+  "cached" deserves honesty about when the cache refreshes: it is recomputed
+  only when the schedule actually fires (`updateAfterRun` in the scheduler),
+  not on every tick — `findDue` just compares the stored instant against
+  `now()`. So a `tzdata` rule change (a government moving a transition date,
+  a country abolishing DST) leaves the one already-computed instant stale
+  until the schedule next fires, at which point the fresh `nextOccurrence`
+  call picks the new rules up — at most one occurrence's delay. That is the
+  same retroactive-wrongness argument this section deploys against
+  local-time storage, applied in miniature to this module's own cache: any
+  stored derivative of zone rules is wrong the moment the rules change, and
+  the only question is how much of it there is to be wrong (one instant per
+  schedule here, every row ever written in the local-time design) and how
+  long until it is recomputed (one occurrence here, never automatically
+  there).
 - **The IANA database, and why offsets are not zones.** `Europe/Paris` is a
   name in the IANA Time Zone Database (`tzdata`), a versioned, continuously
   updated table of every timezone's full history of offset changes, DST
@@ -251,7 +270,7 @@ iterations are ever expected to be needed — a weekly cadence needs at most 7.
 
 - Managed schedulers have absorbed this module's hardest part: **EventBridge Scheduler** (AWS) and **Cloud Scheduler** (GCP) both take an IANA timezone per schedule and evaluate cron expressions against it through the provider's own tzdata, DST included — you stop owning `localToInstant`. What you still own is the *policy*: neither service lets you choose what happens to a `02:30` that never exists on spring-forward day; you get the provider's behaviour, documented or not. If your product has to promise "fires at the first valid instant after the gap," you have to test their behaviour against a real transition date exactly the way this module's tests do — the policy questions in this README don't disappear, they just stop being answerable by reading your own code.
 - The storage rule is portable verbatim: store the cadence expression and the zone name (both services do exactly this), never a precomputed local time. DynamoDB, Firestore, Cloud SQL, RDS — `TIMESTAMPTZ`-equivalent instants for computed occurrences, strings for intent.
-- If you need cadence math inside your own service anyway (previews of "next 5 occurrences," validation at write time), the production version of this module is a library that consumes tzdata — `Temporal` (now in Node), `luxon`, or Java's `java.time` — not hand-rolled `Intl` binary search. This module hand-rolls it to teach the mechanism; a real codebase should not.
+- If you need cadence math inside your own service anyway (previews of "next 5 occurrences," validation at write time), the production version of this module is a library that consumes tzdata — `Temporal` (the TC39 proposal, still rolling out across engines and not yet something to rely on everywhere), `luxon`, or Java's `java.time` — not hand-rolled `Intl` binary search. This module hand-rolls it to teach the mechanism; a real codebase should not.
 
 ## Try it
 

@@ -314,7 +314,7 @@ Every mechanism in this module has a named knob in the managed monitoring stacks
 
 - **Hysteresis (`for_evaluations`)** is CloudWatch's "M out of N datapoints to alarm" (AWS) and the `duration` field on a Cloud Monitoring alerting policy condition (GCP: "the condition must hold for 5 minutes before the incident opens"). Same trade in both: bigger window, fewer flaps, slower detection.
 - **The alert lifecycle (`pending → firing → resolved`)** is CloudWatch's `OK / ALARM / INSUFFICIENT_DATA` states and Cloud Monitoring's incident open/close. `INSUFFICIENT_DATA` is worth studying — it is the state this toy doesn't have, for "the metric stopped arriving at all," and treating it as OK is the classic way a dead reporter goes unnoticed. This module's `missed_run` rule is the hand-built version of that concern.
-- **Dedup (one open alert per rule+subject, `occurrences` incrementing)** is what both platforms do natively: an alarm in `ALARM` staying in `ALARM` sends nothing new. Renotification-with-cooldown is not native to CloudWatch (an alarm notifies on transition only — teams bolt on Step Functions or PagerDuty for re-pages); Cloud Monitoring has it directly as notification-channel renotification intervals. Paging tools (**PagerDuty, Opsgenie**) add the layer above: grouping many alerts into one incident, escalation, ack.
+- **Dedup (one open alert per rule+subject, `occurrences` incrementing)** is what both platforms do natively: an alarm in `ALARM` staying in `ALARM` sends nothing new. Renotification-with-cooldown is not native to CloudWatch (an alarm notifies on transition only — teams bolt on Step Functions or PagerDuty for re-pages); Cloud Monitoring offers repeat notifications only in limited forms (per-policy knobs on specific alert types, not a general renotification interval on every channel), so in practice both platforms lean on the paging layer for re-pages. Paging tools (**PagerDuty, Opsgenie**) add the layer above: grouping many alerts into one incident, escalation, ack.
 - **Delivery** goes through **SNS** (AWS) or notification channels (GCP) instead of your own `deliverWithRetry` — retries, fan-out, and DLQs become the platform's problem.
 - **What stays yours: the rule definitions.** `missed_run` vs `scheduling_lag` — liveness vs latency — is a domain decision no platform makes for you; the equivalent production shape is a heartbeat/absence alarm plus a p95-latency alarm on the same job, and teams routinely ship only the first and miss exactly what the "case a liveness check misses" test demonstrates.
 
@@ -347,10 +347,16 @@ psql "$DATABASE_URL" -c "select id, channel, state, attempts, last_error from no
 - [Google, *Site Reliability Engineering*: Monitoring Distributed Systems](https://sre.google/sre-book/monitoring-distributed-systems/) —
   symptoms vs. causes, and the four golden signals this module's three rule
   kinds are a small slice of.
-- [Google, *Site Reliability Engineering*: Practical Alerting from
-  Time-Series Data](https://sre.google/sre-book/practical-alerting/) — the
-  chapter burn-rate alerting comes from, and the fuller case for why fixed
+- [Google, *The Site Reliability Workbook*: Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/) —
+  the canonical source of burn-rate alerting: error budgets, burn rates, and
+  the multiwindow, multi-burn-rate alerting the "SLOs and burn-rate
+  alerting" concept above is a sketch of, plus the fuller case for why fixed
   thresholds stop working at scale.
+- [Google, *Site Reliability Engineering*: Practical Alerting from
+  Time-Series Data](https://sre.google/sre-book/practical-alerting/) —
+  Borgmon-style rule evaluation over time series: background for how alert
+  rules are computed from metrics, not the source of burn-rate alerting (an
+  earlier version of this guide misattributed it here).
 - [Prometheus Alertmanager docs, Grouping, Inhibition, Silences](https://prometheus.io/docs/alerting/latest/alertmanager/) —
   the standard vocabulary this README borrows, and the reference
   implementation of the two mechanisms this module deliberately skips.

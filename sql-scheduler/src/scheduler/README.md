@@ -101,9 +101,23 @@ do with the conflict. **A lock is a liveness mechanism; a constraint is a
 safety one.** The lock is what makes the common case cheap (only one instance
 ever does the query and the work); the constraint is what makes the rare case
 survivable (the lock failed, but the data still can't become inconsistent).
-Neither replaces the other — a constraint alone would let every instance
-redundantly execute a due occurrence's side effects before losing the insert
-race; a lock alone has no defense against the moment it fails.
+Neither replaces the other, but it matters to state the constraint-only cost
+accurately, because with this code's ordering it is not "redundant side
+effects": `runOccurrence` inserts the `runs` row *first* and executes the
+handler only if that insert won, so a concurrent conflicting insert blocks
+on the unique index until the winner's transaction commits, then receives
+its `23505`, and `createGuarded` returns `null` — the loser never executes
+the handler at all. What a constraint alone actually costs is
+serialization plus waste: every extra instance queries the same due list,
+then sits blocked behind the winner's in-flight transaction — which stays
+open for the handler's full duration, since the handler runs inside it —
+only to discover it lost and throw the work away. Redundant side effects
+appear only in the narrower case where the winner executes the handler and
+then rolls back (a crash mid-transaction), letting a later insert succeed
+and re-execute — at-least-once, not the every-instance duplication an
+earlier version of this guide claimed. The lock is what keeps N instances
+from even starting that pile-up; a lock alone has no defense against the
+moment it fails.
 
 `test/scheduler.test.js` proves both halves directly, not by inference: one
 test races two real `tick(pool)` calls with `Promise.all` and asserts exactly
@@ -251,6 +265,23 @@ this toy skips" below.
   instances by hash range, say) — every instance polls the same full table,
   and the advisory lock picks exactly one to act; that's fine at this app's
   scale and would need rethinking at a much larger one.
+- **Per-occurrence transactions during catch-up.** `processSchedule` runs a
+  schedule's *entire* backlog inside the single `withTransaction` its caller
+  opened — with `catchup_policy: 'all'` after a long outage, that is up to
+  `MAX_BACKLOG` (10000, `src/scheduler/tick.js:10` — the cap `collectBacklog`
+  stops walking at, unmentioned anywhere else in this guide) handler
+  executions in one transaction. Two consequences worth stating plainly: a
+  crash at occurrence N rolls back all N-1 already-inserted `runs` rows
+  while their handlers' side effects have already happened, so the next
+  tick re-collects and re-executes the whole backlog — side effects are
+  at-least-once with a duplication window as large as the backlog itself,
+  not just one occurrence; and a slow handler holds the transaction (and
+  its connection) open for the combined duration of every handler in the
+  backlog, not just its own. Per-occurrence transactions would shrink both
+  windows to a single occurrence — committed `runs` rows would then survive
+  the crash, and the unique constraint would dedupe them on the re-walk —
+  but that restructuring is not done here; the single-transaction shape is
+  the documented tradeoff.
 
 ## In the real world (AWS / GCP)
 
