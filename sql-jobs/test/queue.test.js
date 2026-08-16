@@ -203,6 +203,19 @@ describe('queue', () => {
       expect(doomedRow.status).to.equal('dead')
       expect(claim3.id).to.equal(healthy.id)
     })
+
+    it('decides dead-lettering from the current attempts in the database, not the stale claim-time value', async () => {
+      const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 2 })
+      const [claim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
+      await pool.query('UPDATE jobs SET attempts = attempts + 1 WHERE id = $1', [job.id])
+
+      const failed = await queue.failJob(pool, { jobId: claim.id, workerId: 'w', lockedAt: claim.locked_at, attempts: claim.attempts, maxAttempts: claim.max_attempts, error: 'boom', random: () => 0 })
+
+      expect(failed).to.equal(true)
+      const current = await jobsRepo.findById(pool, job.id)
+      expect(current.status).to.equal('dead')
+      expect(current.attempts).to.equal(2)
+    })
   })
 
   describe('idempotent handlers', () => {
