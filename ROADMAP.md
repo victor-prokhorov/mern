@@ -3,7 +3,7 @@
 Three things, in order: (1) the master concept checklist — the full list of
 what a senior/staff backend engineer and architect should master, grouped by
 area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
-unmarked if it is a real gap not in this repo yet; (2) the index of the 26
+unmarked if it is a real gap not in this repo yet; (2) the index of the 27
 guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
 in priority order. Scan section 1 to pick a weakness; jump to section 2 for
 anything already built.
@@ -36,8 +36,8 @@ spot rather than a thing that doesn't matter.
 - Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
 - CAP / PACELC, replication lag, read-your-writes, monotonic reads `[roadmap]` (must-have #2)
 - CRDTs and convergent merge (the step past whole-document rejection) `[covered]` (concept only, ([concurrency](mern-tickets/server/src/concurrency/README.md)))
-- Distributed transactions, two-phase commit, and why they are avoided `[roadmap]` (must-have #3)
-- Sagas and compensation (orchestration vs choreography) `[roadmap]` (must-have #3)
+- Distributed transactions, two-phase commit, and why they are avoided `[covered]` ([sagas](sql-saga/src/saga/README.md))
+- Sagas and compensation (orchestration vs choreography) `[covered]` ([sagas](sql-saga/src/saga/README.md))
 - Idempotency: client keys, natural keys, unique-index dedupe `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [ledger](sql-ledger/src/ledger/README.md), [fan-out](mern-movies/server/src/notifications/README.md))
 
 ### Messaging and async work
@@ -198,12 +198,13 @@ spot rather than a thing that doesn't matter.
 24. [Exactly-once ticking, catch-up, drift](sql-scheduler/src/scheduler/README.md) — advisory lock for liveness, unique constraint for safety, catch-up policies (all/skip/none), grid anchoring against drift, deterministic jitter
 25. [Alert dedup, hysteresis, cooldown](sql-scheduler/src/alerting/README.md) — pending/firing/resolved lifecycle, for_evaluations, consecutive clears, cooldown renotification, liveness vs lag rules, forcing real races in tests
 26. [Mutation testing](tools/mutation/README.md) — mutation operators, kill vs survivor, why coverage lies, seeded sampling, resumable runs
+27. [Sagas and compensation](sql-saga/src/saga/README.md) — orchestration vs choreography, the saga log, ACD-not-ACID and the missing isolation, semantic locks / commutative updates / by-value compensation, the compensatable/pivot/retryable taxonomy, per-step retry budgets with jitter, idempotent steps, why two-phase commit is avoided
 
 ## Roadmap — must-have
 
 1. **Caching** — cache-aside vs write-through, TTL vs explicit invalidation, cache stampede protection (request coalescing, locks, probabilistic early expiry), HTTP caching (`Cache-Control`, ETag-for-caching, 304s), CDN layer, negative caching, stale-while-revalidate
 2. **Replication and consistency** — read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
-3. **Sagas / distributed transactions** — compensation, orchestration vs choreography, saga state machines, pivot transactions, why two-phase commit is avoided, building on outbox + queue
+3. **Sagas / distributed transactions** — compensation, orchestration vs choreography, saga state machines, pivot transactions, why two-phase commit is avoided, building on outbox + queue — **built: [sql-saga](sql-saga/src/saga/README.md)**
 4. **Feature flags and deploy strategies** — percentage rollout, targeting, kill switches, flag lifecycle and cleanup debt, blue-green and canary deploys, flags as expand-contract for behavior
 5. **Web security: injection classes** — NoSQL/SQL injection, XSS (stored/reflected/DOM), CSRF and why token-in-header auth changes it, SSRF, prototype pollution, input validation boundaries, output encoding
 
