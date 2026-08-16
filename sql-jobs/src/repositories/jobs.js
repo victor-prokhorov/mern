@@ -91,13 +91,13 @@ export async function reapExpired(client, { limit = 100 } = {}) {
   return rows
 }
 
-export async function heartbeat(client, { jobId, workerId, leaseMs }) {
+export async function heartbeat(client, { jobId, workerId, lockedAt, leaseMs }) {
   const { rows } = await client.query(
     `UPDATE jobs
-     SET lease_expires_at = now() + ($3 * interval '1 millisecond'), updated_at = now()
-     WHERE id = $1 AND locked_by = $2 AND status = 'running'
+     SET lease_expires_at = now() + ($4 * interval '1 millisecond'), updated_at = now()
+     WHERE id = $1 AND locked_by = $2 AND locked_at = $3 AND status = 'running'
      RETURNING id, lease_expires_at`,
-    [jobId, workerId, leaseMs]
+    [jobId, workerId, lockedAt, leaseMs]
   )
   return rows[0] || null
 }

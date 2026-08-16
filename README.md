@@ -166,8 +166,8 @@ npm test        # drops and rebuilds its own test database on every run
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-519 tests across nine apps (131 shop, 144 tickets, 58 movies, 14 cache,
-46 ledger, 26 jobs, 63 scheduler, 17 replica, 20 saga), plus a mutation-testing
+537 tests across nine apps (131 shop, 149 tickets, 64 movies, 14 cache,
+49 ledger, 28 jobs, 65 scheduler, 17 replica, 20 saga), plus a mutation-testing
 tool under `tools/mutation` that audits how much those tests actually prove.
 The MERN suites need a reachable MongoDB and use `<app>-test` databases
 (`mern-shop-test`, ...); `sql-ledger`, `sql-jobs`, `sql-scheduler`,

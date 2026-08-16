@@ -25,7 +25,7 @@ describe('pagination', () => {
   it('demonstrates that offset pagination duplicates a row when a new row is inserted between page fetches, while keyset pagination does not', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
-    const r1 = await makeTransfer(alice.id, bob.id, 'ins-1')
+    await makeTransfer(alice.id, bob.id, 'ins-1')
     const r2 = await makeTransfer(alice.id, bob.id, 'ins-2')
     const r3 = await makeTransfer(alice.id, bob.id, 'ins-3')
     const r4 = await makeTransfer(alice.id, bob.id, 'ins-4')
@@ -52,11 +52,11 @@ describe('pagination', () => {
     const bob = await createAccount({ name: 'bob' })
     const r1 = await makeTransfer(alice.id, bob.id, 'del-1')
     const r2 = await makeTransfer(alice.id, bob.id, 'del-2')
-    const r3 = await makeTransfer(alice.id, bob.id, 'del-3')
+    await makeTransfer(alice.id, bob.id, 'del-3')
     const r4 = await makeTransfer(alice.id, bob.id, 'del-4')
 
     const keysetPage1 = await keysetPage({ limit: 2 })
-    const offsetPage1 = await offsetPage({ limit: 2, offset: 0 })
+    await offsetPage({ limit: 2, offset: 0 })
     await pool.query('DELETE FROM entries WHERE transfer_id = $1', [r4.id])
     await pool.query('DELETE FROM transfers WHERE id = $1', [r4.id])
     const keysetPage2 = await keysetPage({ limit: 2, cursor: keysetPage1.body.nextCursor })
@@ -82,6 +82,23 @@ describe('pagination', () => {
     const allIds = [...page1.body.transfers.map((t) => t.id), ...page2.body.transfers.map((t) => t.id)]
     expect(new Set(allIds).size).to.equal(3)
     expect(allIds).to.include.members([r1.id, r2.id, r3.id])
+  })
+
+  it('does not skip rows when the page boundary falls between transfers created within the same millisecond', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const r1 = await makeTransfer(alice.id, bob.id, 'micro-1')
+    const r2 = await makeTransfer(alice.id, bob.id, 'micro-2')
+    const r3 = await makeTransfer(alice.id, bob.id, 'micro-3')
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123100Z', r1.id])
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123400Z', r2.id])
+    await pool.query('UPDATE transfers SET created_at = $1 WHERE id = $2', ['2026-01-01T00:00:00.123900Z', r3.id])
+
+    const page1 = await keysetPage({ limit: 2 })
+    const page2 = await keysetPage({ limit: 2, cursor: page1.body.nextCursor })
+
+    expect(page1.body.transfers.map((t) => t.id)).to.deep.equal([r3.id, r2.id])
+    expect(page2.body.transfers.map((t) => t.id)).to.deep.equal([r1.id])
   })
 
   it('has no nextCursor on the last page', async () => {

@@ -4,7 +4,7 @@ import { pool } from './db.js'
 import { registerHandler } from './queue/handlers.js'
 import { createWorker } from './queue/worker.js'
 import { reapExpired } from './queue/service.js'
-import { deliverMessage } from './services/messages.js'
+import { deliverMessage, markDeliveryFailed } from './services/messages.js'
 
 const port = process.env.PORT || 5004
 const pollMs = Number(process.env.WORKER_POLL_MS) || 500
@@ -12,7 +12,7 @@ const concurrency = Number(process.env.WORKER_CONCURRENCY) || 4
 const leaseMs = Number(process.env.WORKER_LEASE_MS) || 10000
 const perAccountLimit = Number(process.env.WORKER_PER_ACCOUNT_LIMIT) || 5
 
-registerHandler('send_message', deliverMessage)
+registerHandler('send_message', deliverMessage, { onDead: markDeliveryFailed })
 
 app.listen(port, () => console.log(`listening on ${port}`))
 

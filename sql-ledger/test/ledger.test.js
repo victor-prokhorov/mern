@@ -1,7 +1,7 @@
 import { expect, use } from 'chai'
 import chaiHttp from 'chai-http'
 import { pool } from '../src/db.js'
-import { useTestDb, createAccount, httpAgent } from './helpers.js'
+import { useTestDb, createAccount, makeTransfer, httpAgent } from './helpers.js'
 
 use(chaiHttp)
 
@@ -68,6 +68,28 @@ describe('ledger', () => {
 
     expect(caught).to.not.equal(undefined)
     expect(caught.message).to.include('do not sum to zero')
+  })
+
+  it('rejects a commit that reassigns an entry to another transfer and leaves the old transfer unbalanced', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const transferA = await makeTransfer(alice.id, bob.id, 500, 'reassign-a')
+    const transferB = await makeTransfer(alice.id, bob.id, 500, 'reassign-b')
+    const client = await pool.connect()
+
+    await client.query('BEGIN')
+    await client.query('UPDATE entries SET transfer_id = $1 WHERE transfer_id = $2 AND amount_minor = 500', [transferB.id, transferA.id])
+    await client.query('INSERT INTO entries (transfer_id, account_id, amount_minor) VALUES ($1, $2, -500)', [transferB.id, bob.id])
+    let commitError = null
+    try {
+      await client.query('COMMIT')
+    } catch (err) {
+      commitError = err
+    }
+    client.release()
+
+    expect(commitError).to.not.equal(null)
+    expect(commitError.message).to.include('do not sum to zero')
   })
 
   it('rejects an amountMinor beyond the safely representable integer range', async () => {

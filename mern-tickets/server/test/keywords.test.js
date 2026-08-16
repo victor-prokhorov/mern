@@ -223,6 +223,29 @@ describe('substring term length floor', () => {
   })
 })
 
+describe('unmatchable terms', () => {
+  useTestDb()
+
+  it('rejects a multi-word term, which tokenization makes impossible to ever match', async () => {
+    const [ada] = await seedUsers()
+
+    const err = await BlockedTerm.create({ term: 'buy now', severity: 'block', matchType: 'word', createdBy: ada._id }).catch((error) => error)
+
+    expect(err).to.be.an.instanceOf(Error)
+    expect(err.message).to.include('single alphanumeric token')
+    expect(await BlockedTerm.countDocuments()).to.equal(0)
+  })
+
+  it('rejects a term with punctuation inside it, for the same reason', async () => {
+    const [ada] = await seedUsers()
+
+    const err = await BlockedTerm.create({ term: 'e-mail', severity: 'flag', matchType: 'substring', createdBy: ada._id }).catch((error) => error)
+
+    expect(err).to.be.an.instanceOf(Error)
+    expect(err.message).to.include('single alphanumeric token')
+  })
+})
+
 describe('substring precision against the seeded term list', () => {
   useTestDb()
 

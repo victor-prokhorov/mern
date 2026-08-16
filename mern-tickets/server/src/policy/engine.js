@@ -1,5 +1,6 @@
 import { policies } from './policies.js'
 import { ForbiddenError } from '../middleware/error.js'
+import { logger } from '../observability/logger.js'
 
 function ruleMatches(rule, request) {
   const actionMatches = rule.actions.includes('*') || rule.actions.includes(request.action)
@@ -20,7 +21,7 @@ export function decide(ruleSet, request) {
 export function authorize(request) {
   const decision = decide(policies, request)
   if (decision.effect === 'deny') {
-    console.error(`authz denied action=${request.action} ruleId=${decision.ruleId} reason=${decision.reason}`)
+    logger.error('authorization denied', { action: request.action, ruleId: decision.ruleId, reason: decision.reason })
     throw new ForbiddenError('forbidden')
   }
   return decision

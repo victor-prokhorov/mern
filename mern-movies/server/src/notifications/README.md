@@ -12,7 +12,10 @@ creates a movie, every follower of every cast member gets a
 ## How it works here
 
 `Follow` (`server/src/models/follow.js`) is `{ user, actor, createdAt }`
-with a unique index on `{ user, actor }`. `Notification`
+with a unique index on `{ user, actor }` plus a secondary index on
+`{ actor: 1 }` — the unique index is user-prefixed, so it cannot serve
+the fan-out's by-actor lookup below, and without the secondary index
+every movie creation would collection-scan the follows. `Notification`
 (`server/src/models/notification.js`) is
 `{ user, type: 'actor_in_new_movie', actor, movie, readAt, createdAt }`
 with a unique index on `{ user, movie, actor }` — one row per
@@ -25,7 +28,8 @@ The fan-out itself is one function,
 `fanoutNewMovie(movie)` in `server/src/notifications/fanout.js:4-16`:
 it collects every distinct actor id in the movie's cast, does **one**
 query for every `Follow` row referencing any of them
-(`fanout.js:7`, via `followsRepo.findByActors`), and if there are any,
+(`fanout.js:7`, via `followsRepo.findByActors`, served by the
+`{ actor: 1 }` index), and if there are any,
 builds one document per (follower, actor) pair and writes them with a
 **single** `insertMany(docs, { ordered: false })`
 (`server/src/repositories/notifications.js:10`). There is no
@@ -53,7 +57,13 @@ then `createdAt` descending as the tiebreak. This is load-bearing but
 implicit: the ordering is a property of BSON type comparison, not
 something the query states, and MongoDB treats a missing field as null
 for sort purposes too, so the behaviour would survive `readAt` being
-absent rather than explicitly `null`.
+absent rather than explicitly `null`. The query is served by the
+`{ user: 1, readAt: 1, createdAt: -1 }` index, which matches the filter
+and returns rows already in sort order. The unique
+`{ user, movie, actor }` index alone could find a user's rows (its
+prefix is `user`) but says nothing about their order, so before this
+index existed every read finished with an in-memory sort over the
+user's entire notification history.
 
 ## The core concepts
 
@@ -64,9 +74,10 @@ fan-out-on-read, would store nothing at write time and instead, when a
 user opens their notifications, compute on the fly which movies were
 added recently that feature an actor they follow. Fan-out-on-write
 trades storage (one row per follower per event, potentially a lot of
-rows) for read speed (`GET /api/notifications` is a single indexed
-query, `server/src/repositories/notifications.js:17-19`, no
-computation). Fan-out-on-read trades that storage back for slower,
+rows) for read speed (`GET /api/notifications` is a single query
+covered by the `{ user, readAt, createdAt }` index,
+`server/src/repositories/notifications.js:17-19`, no
+computation and no in-memory sort). Fan-out-on-read trades that storage back for slower,
 heavier reads, because every read has to reconstruct what "new for
 this user" means from scratch.
 
@@ -115,8 +126,11 @@ into a rarely-read feed is not.
 Second, be careful attributing this to Twitter as deployed history.
 Raffi Krikorian's 2012 QCon talk *Timelines at Scale* is the canonical
 description of Twitter's fan-out-on-write architecture — every tweet
-fanned out into a large Redis cluster, up to ~20K inserts per tweet,
-each timeline entry holding little more than a tweet id — and in that
+fanned out into a large Redis cluster, an average of roughly 126
+timeline inserts per tweet with the extreme set by the largest
+accounts of the day (Lady Gaga's 31 million followers is the talk's
+worked example), each timeline entry holding little more than a tweet
+id — and in that
 talk, not fanning out high-value accounts and merging their tweets in
 at read time was presented as the *planned* fix for the fan-out
 latency problem, not as something already running. The system X
@@ -158,7 +172,17 @@ MongoDB 7 rather than assumed:
   the replay above, the thrown `MongoBulkWriteError` carries
   `code: 11000`, five entries in `writeErrors`, and an `insertedDocs`
   array holding exactly the one document that landed — which is what
-  `repositories/notifications.js:12` returns instead of throwing.
+  the repository returns instead of throwing.
+- The top-level `code` on a `MongoBulkWriteError` is taken from the
+  *first* write error, so a mixed batch — one duplicate plus one
+  genuinely failed insert — still reports `11000` at the top. Checking
+  only `err.code === 11000` would swallow that batch as if it were
+  duplicates-only, converting the non-duplicate failure into silent
+  partial success. The guard in `repositories/notifications.js`
+  therefore inspects every entry in `writeErrors` (each carries its own
+  code, verified as `writeError.err.code` in the shape Mongoose
+  rethrows) and only treats the error as benign when all of them are
+  duplicate-key failures; anything else rethrows.
 
 There is a real gap underneath all of this that the code does not
 close. The unique index is declared with `schema.index(...,
@@ -364,6 +388,9 @@ this notification type entirely), none of which exist here.
 - No celebrity-scale batching or async processing — fan-out runs
   inline with the HTTP request, on however many followers exist.
 - No digesting or rate-limiting — every trigger produces its own row.
+- No pagination on `GET /api/notifications` — it returns the caller's
+  entire notification history in one unbounded response, however large
+  it has grown.
 - No per-device read-sync, no notification preferences beyond
   follow/unfollow, no email or push delivery — this API only ever
   writes rows a client is expected to poll via `GET /api/notifications`.
@@ -371,8 +398,8 @@ this notification type entirely), none of which exist here.
 ## In the real world (AWS / GCP)
 
 - **The fan-out moves off the request path and onto a bus.** The production shape of `fanoutNewMovie` is: the movie write emits one event (via the outbox pattern above), and **SNS → per-consumer SQS queues** (AWS) or one **Pub/Sub topic with multiple subscriptions** (GCP) carries it; a worker consumes the event, queries followers, and bulk-writes notification rows in batches. The inline call this app makes is the thing that stops scaling first — a million followers inside one HTTP request is the celebrity problem made literal.
-- **Delivery channels are their own managed products**: **SES**/**Pinpoint** for email/push on AWS, **Firebase Cloud Messaging** for push on GCP — each with its own at-least-once semantics, so the `{ user, movie, actor }` unique-key dedupe this module teaches gets re-applied one layer down (FCM collapse keys, SES idempotent sends by message dedup id on SQS FIFO).
-- **The notifications table itself often changes database.** One row per (follower, event) with single-key reads ("my notifications, newest first") and TTL expiry is a textbook **DynamoDB** (partition key `user`, sort key `createdAt`) or **Firestore** (subcollection per user) workload — cheap, horizontally scaled, and the unique composite key becomes a deterministic document id (`user_movie_actor`), which makes the insert idempotent by construction. That is the same trick as this module's unique index, expressed as a key instead of a constraint.
+- **Delivery channels are their own managed products**: on AWS, **SES** for email and **AWS End User Messaging** for push/SMS (Amazon Pinpoint, the previous answer here, reached end of support and its engagement messaging moved to those two); **Firebase Cloud Messaging** for push on GCP. Each is at-least-once, so the `{ user, movie, actor }` unique-key dedupe this module teaches gets re-applied one layer down — on the *sending* side, because SES has no idempotent send of its own: the standard shape is an **SQS FIFO** queue in front of the send call, with a `MessageDeduplicationId` derived from exactly this kind of composite key. Do not mistake FCM's collapse keys for that dedupe: a collapse key is message *replacement* — while a device is offline, only the latest message per collapse key is kept for it — a freshness mechanism, not an idempotency one, and it teaches the wrong model if read as the unique index's analogue.
+- **The notifications table itself often changes database.** One row per (follower, event) with single-key reads ("my notifications, newest first") and TTL expiry is a textbook **DynamoDB** or **Firestore** workload — cheap and horizontally scaled. In Firestore the idempotency trick is direct: a subcollection per user whose document id is the deterministic `user_movie_actor` makes the insert idempotent by construction — this module's unique index expressed as a key instead of a constraint. In DynamoDB the two goals compete, because a table has one primary key: partition key `user` with sort key `createdAt` buys the newest-first read but cannot also give a conditional-put idempotency check on `user_movie_actor`, and keying on the composite buys idempotency but loses time ordering. Getting both takes a second index — say, key the table by `user` + `movie_actor` for the idempotent conditional put, and read newest-first through a `user` + `createdAt` GSI (or keep a second table).
 - **Digests and rate caps** — the batching this toy skips — usually run as a scheduled aggregation job (EventBridge Scheduler / Cloud Scheduler firing a worker that collapses pending rows into one digest), which is exactly the `sql-scheduler` + `sql-jobs` composition in this repo.
 
 ## Try it
@@ -410,9 +437,11 @@ claims.
   rate. Twelve pages, and it will change how you frame the question.
 - [Timelines at Scale (Raffi Krikorian, QCon San Francisco 2012)](https://www.infoq.com/presentations/Twitter-Timeline-Scalability)
   — the canonical talk on Twitter's fan-out-on-write home timeline,
-  from the person who ran it. Watch it for the operational texture
-  (what a write amplification of 20K inserts actually costs), and note
-  that the celebrity merge-at-read is presented as the planned fix.
+  from the person who ran it. Watch it for the operational texture of
+  write amplification — the average tweet lands in roughly 126
+  timelines, and the 31M-follower extreme is the worked example — and
+  note that the celebrity merge-at-read is presented as the planned
+  fix.
 - [The Architecture Twitter Uses to Deal with 150M Active Users (High Scalability)](https://highscalability.com/the-architecture-twitter-uses-to-deal-with-150m-active-users/)
   — a detailed written summary of that talk, useful because it is
   searchable and quotable where a video is not. This is the source for
