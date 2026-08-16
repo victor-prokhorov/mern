@@ -73,7 +73,7 @@ export async function reapExpired(client, { limit = 100 } = {}) {
     `UPDATE jobs
      SET status = CASE WHEN attempts + 1 >= max_attempts THEN 'dead' ELSE 'ready' END,
          attempts = attempts + 1,
-         last_error = 'lease expired',
+         last_error = CASE WHEN last_error IS NULL THEN 'lease expired' ELSE last_error || '; lease expired' END,
          locked_by = NULL,
          locked_at = NULL,
          lease_expires_at = NULL,
@@ -163,18 +163,10 @@ export async function listJobs(client, { status = null, kind = null, limit = 50,
 export async function retryDead(client, id) {
   const { rows } = await client.query(
     `UPDATE jobs
-     SET status = 'ready', attempts = 0, last_error = NULL, run_at = now(), updated_at = now()
+     SET status = 'ready', max_attempts = max_attempts + 1, run_at = now(), updated_at = now()
      WHERE id = $1 AND status = 'dead'
      RETURNING id, kind, payload, run_at, priority, status, attempts, max_attempts, last_error, created_at, updated_at`,
     [id]
   )
   return rows[0] || null
-}
-
-export async function countByAccountAndStatus(client, { accountId, status }) {
-  const { rows } = await client.query(
-    "SELECT count(*)::int AS count FROM jobs WHERE payload ->> 'accountId' = $1 AND status = $2",
-    [String(accountId), status]
-  )
-  return rows[0].count
 }
