@@ -33,3 +33,7 @@ export async function evaluateAllRules(pool) {
   }
   return outcomes
 }
+
+export async function evaluateRulesTick(pool) {
+  throw new Error('not implemented')
+}
