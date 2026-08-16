@@ -12,6 +12,15 @@ const blockedTermSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+blockedTermSchema.pre('validate', function assertTermIsMatchable() {
+  const normalized = normalize(this.term || '')
+  if (!/[^a-z0-9]/.test(normalized)) return
+  this.invalidate(
+    'term',
+    `terms must normalize to a single alphanumeric token or they can never match, and "${this.term}" normalizes to "${normalized}"`
+  )
+})
+
 blockedTermSchema.pre('validate', function assertSubstringTermIsLongEnough() {
   if (this.matchType !== 'substring') return
   const normalized = normalize(this.term || '')

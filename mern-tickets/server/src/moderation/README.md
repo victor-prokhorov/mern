@@ -29,6 +29,8 @@ after normalization, and "hell" normalizes to "hel"
 
 `word` terms are deliberately exempt from the floor: they match a whole token, so a three-letter word term matches the word and nothing else.
 
+A second write-time rule guards a subtler dead end. `tokenize` (`src/moderation/keywords.js:7`) splits scanned text on non-alphanumerics, so no token ever contains a space or punctuation — which means a multi-word term (`buy now`) or a punctuated one (`e-mail`) could sit in the database forever without matching anything, silently. The same `pre('validate')` stage therefore also refuses any term that does not normalize to a single alphanumeric token, with the same shape of error naming the term and what it normalizes to.
+
 A flagged ticket or comment's real matched terms are only ever shown to a viewer whose role is `agent` or `admin`. `viewModeratable` (`src/moderation/view.js:5-9`) strips `moderation.terms` down to just `moderation.flagged` before any other role reads the response — including the reporter who submitted the content in the first place. The database record itself always keeps the full `terms` list; only the HTTP response is redacted, and only for a viewer who cannot act on the flag anyway. It is shared, not controller-only: every controller response goes through it (`src/controllers/tickets.js:5-41`), and so does the one non-HTTP path that can return ticket state directly — the 412 conflict body a stale optimistic-concurrency write gets back (`src/services/tickets.js:85`, see [`../concurrency/README.md`](../concurrency/README.md)).
 
 ## The core concepts
