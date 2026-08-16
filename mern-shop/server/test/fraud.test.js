@@ -7,7 +7,7 @@ import Order from '../src/models/order.js'
 import Cart from '../src/models/cart.js'
 import Product from '../src/models/product.js'
 import { seedUser, seedUsers } from '../src/seed.js'
-import { NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_DOMAIN, evaluateSignals } from '../src/fraud/signals.js'
+import { NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_RECIPIENT, evaluateSignals } from '../src/fraud/signals.js'
 import { score } from '../src/fraud/score.js'
 import { useTestDb, loginAs } from './helpers.js'
 
@@ -94,14 +94,14 @@ describe('fraud signals', () => {
     expect(signal.triggered).to.equal(false)
   })
 
-  it('BLOCKED_DOMAIN triggers when the precomputed stats flag is set', () => {
-    const signal = BLOCKED_DOMAIN({ stats: { isDomainBlocked: true } })
+  it('BLOCKED_RECIPIENT triggers when the precomputed stats flag is set', () => {
+    const signal = BLOCKED_RECIPIENT({ stats: { isDomainBlocked: true } })
 
     expect(signal.triggered).to.equal(true)
   })
 
-  it('BLOCKED_DOMAIN does not trigger when the precomputed stats flag is unset', () => {
-    const signal = BLOCKED_DOMAIN({ stats: { isDomainBlocked: false } })
+  it('BLOCKED_RECIPIENT does not trigger when the precomputed stats flag is unset', () => {
+    const signal = BLOCKED_RECIPIENT({ stats: { isDomainBlocked: false } })
 
     expect(signal.triggered).to.equal(false)
   })
@@ -256,7 +256,7 @@ describe('fraud scoring integration', () => {
     expect(res.body.status).to.equal('pending')
   })
 
-  it('BLOCKED_DOMAIN fires end to end: denies a checkout whose email domain is on the blocklist', async () => {
+  it('BLOCKED_RECIPIENT fires end to end: denies a checkout whose email domain is on the blocklist', async () => {
     const user = await seedUsers()
     await User.updateOne({ _id: user._id }, { createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
     const session = await loginAs(app, seedUser.email, seedUser.password)

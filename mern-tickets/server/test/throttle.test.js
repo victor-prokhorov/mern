@@ -1,7 +1,7 @@
 import { expect, use } from 'chai'
 import chaiHttp, { request } from 'chai-http'
 import app from '../src/app.js'
-import TokenBucket from '../src/models/tokenBucket.js'
+import TokenBucket, { IDLE_BUCKET_TTL_SECONDS } from '../src/models/tokenBucket.js'
 import { consume } from '../src/throttle/tokenBucket.js'
 import { seedUsers } from '../src/seed.js'
 import { useTestDb } from './helpers.js'
@@ -96,5 +96,15 @@ describe('token bucket throttling', () => {
 
     expect(res).to.have.status(429)
     expect(res).to.have.header('retry-after', '60')
+  })
+
+  it('declares a TTL index on updatedAt so idle buckets are reaped', async () => {
+    await TokenBucket.syncIndexes()
+
+    const indexes = await TokenBucket.collection.indexes()
+
+    const ttl = indexes.find((index) => index.key.updatedAt === 1)
+    expect(ttl, 'no index on updatedAt').to.not.equal(undefined)
+    expect(ttl.expireAfterSeconds).to.equal(IDLE_BUCKET_TTL_SECONDS)
   })
 })

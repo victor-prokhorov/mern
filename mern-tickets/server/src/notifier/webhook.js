@@ -1,7 +1,10 @@
 import { createCircuitBreaker } from '../circuitBreaker/breaker.js'
 import { logger } from '../observability/logger.js'
+import { recordBreakerTransition } from '../observability/metrics.js'
 
 const DEFAULT_TIMEOUT_MS = 1000
+
+const BREAKER_NAME = 'webhook'
 
 export class WebhookResponseError extends Error {
   constructor(status) {
@@ -19,6 +22,7 @@ export function isWebhookFailure(err) {
 
 function logTransition(event) {
   logger.info('webhook breaker state changed', { from: event.from, to: event.to, stats: event.stats })
+  recordBreakerTransition({ breaker: BREAKER_NAME, from: event.from, to: event.to })
 }
 
 export function createNotifier(overrides = {}) {

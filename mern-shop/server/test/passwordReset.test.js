@@ -192,6 +192,16 @@ describe('password reset', () => {
     expect(refreshed).to.have.status(401)
   })
 
+  it('declares a TTL index on expiresAt so used and expired rows are reaped', async () => {
+    await PasswordReset.syncIndexes()
+
+    const indexes = await PasswordReset.collection.indexes()
+
+    const ttl = indexes.find((index) => index.key.expiresAt === 1)
+    expect(ttl, 'no index on expiresAt').to.not.equal(undefined)
+    expect(ttl.expireAfterSeconds).to.equal(0)
+  })
+
   it('does not immediately invalidate the old access token, since it is a stateless JWT that only dies on its own short expiry', async () => {
     await seedUsers()
     const login = await request.execute(app).post('/api/auth/login').send({ email: seedUser.email, password: seedUser.password })
