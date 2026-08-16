@@ -2,6 +2,7 @@ import * as schedulesRepo from '../repositories/schedules.js'
 import * as runsRepo from '../repositories/runs.js'
 import * as alertRulesRepo from '../repositories/alertRules.js'
 import * as lockRepo from '../repositories/lock.js'
+import * as notificationsRepo from '../repositories/notifications.js'
 import { evaluateRule } from './rules.js'
 import { evaluate } from './lifecycle.js'
 import { deliverWithRetry } from './delivery.js'
@@ -9,6 +10,8 @@ import { deliverWithRetry } from './delivery.js'
 const EVAL_LOCK_KEY = 951414
 
 const DELIVERY_OPTIONS = { maxAttempts: 5, baseMs: 100, capMs: 2000, timeoutMs: 2000 }
+
+const RELAY_BATCH_LIMIT = 100
 
 async function metricsFor(pool, rule, schedule) {
   if (rule.kind === 'missed_run') {
@@ -50,14 +53,37 @@ export async function evaluateAllRules(pool) {
   return outcomes
 }
 
+export async function relayPendingNotifications(pool, options = {}) {
+  const limit = options.limit || RELAY_BATCH_LIMIT
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const pending = await notificationsRepo.claimPending(client, limit)
+    const results = []
+    for (const notification of pending) {
+      const remainingAttempts = Math.max(1, DELIVERY_OPTIONS.maxAttempts - notification.attempts)
+      const result = await deliverWithRetry(client, notification, { url: notification.channel, ...DELIVERY_OPTIONS, maxAttempts: remainingAttempts })
+      results.push({ notificationId: notification.id, ...result })
+    }
+    await client.query('COMMIT')
+    return results
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
 export async function evaluateRulesTick(pool) {
   const client = await pool.connect()
   try {
     const acquired = await lockRepo.tryAcquire(client, EVAL_LOCK_KEY)
-    if (!acquired) return { acquired: false, outcomes: [] }
+    if (!acquired) return { acquired: false, outcomes: [], relayed: [] }
     try {
       const outcomes = await evaluateAllRules(pool)
-      return { acquired: true, outcomes }
+      const relayed = await relayPendingNotifications(pool)
+      return { acquired: true, outcomes, relayed }
     } finally {
       await lockRepo.release(client, EVAL_LOCK_KEY)
     }

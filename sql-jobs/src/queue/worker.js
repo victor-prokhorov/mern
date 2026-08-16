@@ -25,7 +25,7 @@ export function createWorker({
     const claim = { workerId, lockedAt: job.locked_at }
     inFlight.set(job.id, claim)
     const hbTimer = setInterval(() => {
-      jobsRepo.heartbeat(pool, { jobId: job.id, workerId, leaseMs }).catch((err) => onError(err, job))
+      jobsRepo.heartbeat(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, leaseMs }).catch((err) => onError(err, job))
     }, Math.max(50, Math.floor(leaseMs / 3)))
     try {
       const handler = getHandler(job.kind)

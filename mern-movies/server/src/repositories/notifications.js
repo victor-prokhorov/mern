@@ -1,6 +1,12 @@
 import Notification from '../models/notification.js'
 
+function writeErrorCode(writeError) {
+  if (writeError.err) return writeError.err.code
+  return writeError.code
+}
+
 function isDuplicateKeyError(err) {
+  if (Array.isArray(err.writeErrors)) return err.writeErrors.every((writeError) => writeErrorCode(writeError) === 11000)
   return err.code === 11000
 }
 

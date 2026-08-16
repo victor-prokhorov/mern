@@ -103,8 +103,12 @@ two separate systems. See "where this would move next" below.
 **The cold-start problem.** The standard treatment names three cases,
 not two: new user, new item, and new system (a recommender with no
 interaction history at all). This implementation handles the first
-two very differently and does not face the third, because the seed
-data ships with ratings already in place.
+two very differently and dodges the third — not because the seed data
+ships with interaction history (`src/seed.js` creates zero `Rating`
+and zero `Watch` documents; every seeded user starts cold) but because
+`averageRating` is a seeded scalar on the movie rather than an
+aggregate computed from `Rating` documents, so the quality floor and
+the no-signals fallback ranking work with an empty interaction store.
 
 A *new user* (no ratings, no watches) gets `likedGenres`,
 `dislikedGenres`, and `watchedGenres` all empty, so every eligible
@@ -236,9 +240,13 @@ a strict score sort — and that is a known, named gap rather than an
 oversight.
 
 **Explainability.** Every returned item carries a `reasons` array
-(`rank.js:16-28`) naming exactly which multipliers fired and for which
-genre — `LIKED_GENRE:thriller`, `DISLIKED_GENRE:comedy`,
-`WATCHED_GENRE:drama`. A recommendation nobody can explain cannot be
+(`rank.js:16-28`) naming which genres matched which signal —
+`LIKED_GENRE:thriller`, `DISLIKED_GENRE:comedy`, `WATCHED_GENRE:drama`.
+Read it as genre evidence, not as a multiplier trace: a reason is
+pushed per matched genre, but each multiplier fires at most once per
+category, so a movie matching two liked genres carries two
+`LIKED_GENRE` reasons that map to a single 1.2 boost, not 1.2 twice.
+A recommendation nobody can explain cannot be
 debugged: if a user complains "why am I seeing this," or an engineer
 needs to understand why a ranking changed after a deploy, a black-box
 score is much harder to reason about than an explicit list of which
@@ -397,6 +405,19 @@ two-tower plus ANN as the frontier, because it is now the baseline.
 
 ## What this toy skips
 
+- The eligibility query does not scale, and it is the first wall this
+  code hits — before any ranking concern. `findEligible` sends the
+  caller's entire rated-plus-watched history as an `_id $nin` exclusion
+  list in every request, and that list is unbounded: it grows forever
+  with the user's activity, fattening the query itself, and every movie
+  the `averageRating >= 7` range matches must still be checked against
+  the whole list. The `{ averageRating: 1 }` index bounds what the
+  range scans; nothing bounds the exclusion. The production shapes are
+  bounding the history (exclude only recent items and tolerate an
+  occasional repeat), filtering seen items after retrieval, or a bloom
+  filter of seen ids — none built here.
+- Genre signals are presence-based, not count-weighted — one rating
+  makes a genre exactly as "liked" as fifty would.
 - No diversity or serendipity re-ranking; the 10 results are a strict
   score sort and can be genre-homogeneous. No coverage or novelty
   measurement either, so there is nothing here that would even detect

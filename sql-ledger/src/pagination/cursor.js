@@ -15,7 +15,6 @@ export function decodeCursor(raw) {
   if (!payload || typeof payload.c !== 'string' || typeof payload.i !== 'string' || !/^\d+$/.test(payload.i)) {
     throw new BadRequestError('malformed cursor')
   }
-  const createdAt = new Date(payload.c)
-  if (Number.isNaN(createdAt.getTime())) throw new BadRequestError('malformed cursor')
-  return { createdAt, id: payload.i }
+  if (Number.isNaN(new Date(payload.c).getTime())) throw new BadRequestError('malformed cursor')
+  return { createdAt: payload.c, id: payload.i }
 }

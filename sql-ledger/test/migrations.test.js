@@ -1,5 +1,6 @@
 import { expect } from 'chai'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import pg from 'pg'
@@ -52,6 +53,26 @@ describe('migration runner', () => {
       expect(new Set(allApplied).size).to.equal(allApplied.length)
       expect(rows.every((row) => row.applied)).to.equal(true)
     })
+  })
+
+  it('never runs ADD CONSTRAINT ... NOT VALID and its VALIDATE CONSTRAINT inside one transaction', async () => {
+    const migrationsDir = fileURLToPath(new URL('../src/migrations', import.meta.url))
+    const files = readdirSync(migrationsDir).filter((name) => /^\d+_.*\.sql$/.test(name)).sort()
+    const contents = new Map(files.map((file) => [file, readFileSync(path.join(migrationsDir, file), 'utf8')]))
+    const addFile = files.find((file) => contents.get(file).includes('ADD CONSTRAINT balance_minor_not_null'))
+    const validateFile = files.find((file) => contents.get(file).includes('VALIDATE CONSTRAINT balance_minor_not_null'))
+
+    const validated = await withScratchSchema(async (scratchPool) => {
+      await migrate(scratchPool)
+      const { rows } = await scratchPool.query("SELECT convalidated FROM pg_constraint WHERE conname = 'balance_minor_not_null' AND connamespace = current_schema()::regnamespace")
+      return rows[0].convalidated
+    })
+
+    expect(addFile).to.not.equal(undefined)
+    expect(validateFile).to.not.equal(undefined)
+    expect(validateFile).to.not.equal(addFile)
+    expect(files.indexOf(validateFile)).to.be.greaterThan(files.indexOf(addFile))
+    expect(validated).to.equal(true)
   })
 
   it('detects and rebuilds an INVALID index left behind by an interrupted CREATE INDEX CONCURRENTLY', async () => {
