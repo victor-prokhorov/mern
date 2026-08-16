@@ -141,7 +141,25 @@ mirroring `tick()`'s own liveness guard — `src/index.js` calls
 calls `tick()` and never `runDueSchedules` directly. Before this wiring
 existed, a firing alert's notification sat at `state: 'pending', attempts: 0`
 forever — created, never delivered, never retried — which is a real
-regression a previous pass introduced and this one closes.
+regression a previous pass introduced and a later one closed. Closing it,
+though, left a narrower variant of the same orphan open: the notification
+row commits inside `evaluate()`'s transaction, and `deliverWithRetry` runs
+*after* that commit, in-process, once — so a crash in the window between
+the commit and delivery (or partway through the retry loop) stranded the
+committed row at `pending` with nothing ever re-scanning it. The same
+"sat at pending forever" outcome, reachable not by missing wiring but by
+one badly-timed process death. `relayPendingNotifications`
+(`src/alerting/evaluator.js`) closes that window: on every evaluator tick,
+after the sweep, it claims stranded `pending` rows with
+`FOR UPDATE SKIP LOCKED` (`notificationsRepo.claimPending` — the same
+non-blocking claim `sql-jobs` and `sql-ledger`'s outbox relay use, so a
+concurrent claimer skips rather than waits) and drives each through the
+same `deliverWithRetry` rules to `delivered` or `parked`, granting only
+the attempts the row has left (`maxAttempts - attempts`) so a notification
+stranded mid-retry cannot restart its budget from zero. Delivery is
+at-least-once by construction — a crash after the webhook lands but
+before `markDelivered` commits means the relay re-sends — which is the
+correct side of the tradeoff for an alert.
 
 ## The core concepts
 
@@ -149,8 +167,11 @@ regression a previous pass introduced and this one closes.
   loop is a small, local, single-purpose retry — bounded attempts, backoff,
   one terminal `parked` state — built because this app is allowed exactly
   this much delivery machinery for its own webhook calls. It is deliberately
-  *not* a general-purpose reliable-execution system: no lease, no reaper
-  reclaiming a delivery some dead process abandoned mid-attempt, no fairness
+  *not* a general-purpose reliable-execution system: it carries exactly one
+  reclaim mechanism — the relay sweep above, without which a crash orphaned
+  committed notifications forever — and stops there: no lease or fencing
+  (the relay's claim lasts only as long as its transaction, and re-delivery
+  after a crash is accepted rather than fenced out), no fairness
   across notifications, no separate dead-letter table. If any of that ever
   became necessary — many channels, delivery volume worth sharding, a need
   to inspect and manually replay parked notifications at scale — that is
