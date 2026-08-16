@@ -152,6 +152,31 @@ describe('scheduler tick', () => {
       expect(poisonedRuns[0].status).to.equal('failure')
       expect(poisonedRuns[0].error).to.not.equal(null)
     })
+
+    it('a schedule whose failure cannot even be recorded does not stop the tick from processing the others', async () => {
+      let healthyCalls = 0
+      registerHandler('healthy-report-2', async () => {
+        healthyCalls += 1
+        return { status: 'success' }
+      })
+      const dueAt = pastInstant(1000)
+      const poisoned = await createScheduleFixture({ name: 'poisoned-report-2', cadence: 'daily at 09:00', timezone: 'Not/AZone', nextRunAt: dueAt, catchupPolicy: 'skip' })
+      const healthy = await createScheduleFixture({ name: 'healthy-report-2', cadence: 'daily at 09:00', nextRunAt: dueAt, catchupPolicy: 'skip' })
+      const alwaysThrows = async () => {
+        throw new Error('cannot record failure either')
+      }
+
+      const results = await runDueSchedules(pool, { recordScheduleFailure: alwaysThrows })
+
+      const healthyRuns = await runsRepo.listByScheduleId(pool, healthy.id)
+      const poisonedRuns = await runsRepo.listByScheduleId(pool, poisoned.id)
+      const poisonedResult = results.find((r) => r.scheduleId === poisoned.id)
+
+      expect(healthyCalls).to.equal(1)
+      expect(healthyRuns).to.have.length(1)
+      expect(poisonedRuns).to.have.length(0)
+      expect(poisonedResult.error).to.not.equal(undefined)
+    })
   })
 
   describe('drift', () => {

@@ -17,7 +17,7 @@ retry it forty times with a dead-letter queue."
 
 ## How it works here
 
-**The tick.** `runDueSchedules(pool)` (`src/scheduler/tick.js:68-82`) asks the
+**The tick.** `runDueSchedules(pool)` (`src/scheduler/tick.js:72-91`) asks the
 database for its own current time (`schedulesRepo.currentTime`,
 `src/repositories/schedules.js:26-29` — `SELECT now()`, never
 `new Date()` in application code) and every active schedule whose
@@ -32,22 +32,50 @@ per-schedule guard, so a schedule whose cadence or timezone was bad enough to
 throw (an invalid IANA zone name reaching `Intl.DateTimeFormat` inside
 `nextOccurrence`, say) aborted every later schedule in the same pass. A
 schedule that throws now gets a failure recorded on a run instead
-(`recordScheduleFailure`, `src/scheduler/tick.js:61-66` — a fresh transaction
-inserts a `runs` row keyed on the schedule's own `next_run_at` with
-`status: 'failure'` and the error message) and the loop moves on. The
-schedule stays stuck at the same `next_run_at` until whatever made it throw
-is fixed, which is the point: a run row failing loudly is far better than a
-silent skip. The reachable version of this bug was `POST /api/schedules`
-accepting an invalid IANA timezone name outright (`services/schedules.js`
-validated the cadence but not the timezone) — fixed at the source with
-`isValidTimeZone` (`src/cadence/README.md`) so a schedule with a bad
-timezone is rejected with `400` before it can ever reach the tick at all;
-the per-schedule isolation above is the defense for whatever bad data still
-gets in some other way (a direct database edit, a future code path that
-skips validation), not a substitute for validating at the door.
+(`recordScheduleFailure`, `src/scheduler/tick.js:61-70`) and the loop moves
+on. The reachable version of this bug was `POST /api/schedules` accepting an
+invalid IANA timezone name outright (`services/schedules.js` validated the
+cadence but not the timezone) — fixed at the source with `isValidTimeZone`
+(`src/cadence/README.md`) so a schedule with a bad timezone is rejected with
+`400` before it can ever reach the tick at all; the per-schedule isolation
+above is the defense for whatever bad data still gets in some other way (a
+direct database edit, a future code path that skips validation), not a
+substitute for validating at the door.
+
+**The failure handler is itself guarded, and its own call site is guarded a
+second time.** `recordScheduleFailure` inserts a `runs` row keyed on the
+schedule's own `next_run_at` with `status: 'failure'` and the original error
+message, so the schedule stays visibly stuck rather than silently skipped —
+but the very first version of this fix isolated `processSchedule` and left
+`recordScheduleFailure` itself unguarded, so a failure *while recording the
+failure* (the transaction can't get a connection, the insert itself throws
+for some unrelated reason) aborted the remaining due list exactly the way
+the original bug did, one level down. Error handlers that can themselves
+fail are a general trap, not specific to this app: the handler runs
+precisely when something has already gone wrong, which makes it the least
+likely code path to be healthy at that moment and — because "the error path
+of the error path" is an easy thing to never think to test — the least
+likely to have been exercised at all. The fix is two guards, not one:
+`recordScheduleFailure`'s own body catches and logs whatever its DB write
+throws (`src/scheduler/tick.js:61-70`), and `runDueSchedules`'s call site
+*also* wraps the call in its own `try`/`catch` (`src/scheduler/tick.js:82-85`)
+so the loop survives even if a future change strips the inner guard, or (as
+in the test) the recording function is replaced entirely. `runDueSchedules`
+accepts an optional `{ recordScheduleFailure }` override for exactly this —
+the same injectable-dependency pattern `deliverWithRetry` already uses for
+`fetchImpl`/`sleep` — because forcing this specific failure through a real
+database fault would need either a timing-dependent race (the schedule row
+would have to vanish between being fetched as due and the failure write,
+which `findDue` and the write happen too close together in the same call to
+arrange without genuine concurrency) or a contrived one; the override makes
+the test for "recording the failure throws, and later schedules still run"
+deterministic instead. A concurrency test that doesn't force the actual
+interleaving proves only that the code runs twice — see
+`src/alerting/README.md` for where that lesson was learned the hard way, on
+this same branch, on a different test.
 
 **Exactly one instance decides — and two independent mechanisms enforce it,
-for two different reasons.** `tick()` (`src/scheduler/tick.js:84-98`) first
+for two different reasons.** `tick()` (`src/scheduler/tick.js:93-107`) first
 takes `pg_try_advisory_lock` (`src/repositories/lock.js`) — non-blocking: if
 another instance already holds it, this call returns `{ acquired: false }`
 immediately and does no work at all. That is the *liveness* half: it stops
