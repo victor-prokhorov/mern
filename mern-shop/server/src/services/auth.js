@@ -6,6 +6,8 @@ import * as blocks from './blocks.js'
 import { signAccessToken, generateRefreshToken, hashRefreshToken, REFRESH_TOKEN_TTL_MS } from '../session/tokens.js'
 import { BadRequestError, UnauthorizedError } from '../middleware/error.js'
 
+const UNKNOWN_EMAIL_DUMMY_HASH = '$2b$10$D9.gDa/R3XimjbfbNaZr1eySVokSRNJVe936JPeC2ZKmWDrdZwApC'
+
 async function issueSession(userId, familyId) {
   const now = new Date()
   const { raw, hash } = generateRefreshToken()
@@ -17,8 +19,8 @@ async function issueSession(userId, familyId) {
 export async function login(email, password) {
   if (!email || !password) throw new BadRequestError('email and password are required')
   const user = await users.findByEmail(email)
-  const matches = user ? await bcrypt.compare(password, user.passwordHash) : false
-  if (!matches) throw new UnauthorizedError('invalid credentials')
+  const matches = await bcrypt.compare(password, user ? user.passwordHash : UNKNOWN_EMAIL_DUMMY_HASH)
+  if (!user || !matches) throw new UnauthorizedError('invalid credentials')
   if (user.blockedAt || (await blocks.isBlockedEmail(user.email))) throw new UnauthorizedError('invalid credentials')
   const familyId = crypto.randomUUID()
   const { accessToken, refreshToken } = await issueSession(user._id, familyId)
