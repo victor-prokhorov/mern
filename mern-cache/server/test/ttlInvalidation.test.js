@@ -14,11 +14,14 @@ function makeOrigin(data) {
 describe('TTL expiry versus explicit invalidation', () => {
   it('reloads from the origin once the entry TTL has elapsed', async () => {
     const { loader, state } = makeOrigin({ p1: { id: 'p1', priceCents: 100 } })
-    const cache = createCache({ store: createStore(), loader, ttlMs: 1000 })
+    let t = 0
+    const cache = createCache({ store: createStore(), loader, ttlMs: 1000, clock: () => t })
 
-    const cold = await cache.get('p1', 0)
-    const warm = await cache.get('p1', 500)
-    const expired = await cache.get('p1', 1500)
+    const cold = await cache.get('p1')
+    t = 500
+    const warm = await cache.get('p1')
+    t = 1500
+    const expired = await cache.get('p1')
 
     expect(cold.source).to.equal('origin')
     expect(warm.source).to.equal('cache')

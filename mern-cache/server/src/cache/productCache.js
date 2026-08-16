@@ -4,16 +4,17 @@ export function createCache(options) {
   const ttlMs = options.ttlMs
   const negativeTtlMs = options.negativeTtlMs ?? options.ttlMs
   const coalesce = options.coalesce ?? true
+  const clock = options.clock ?? Date.now
   const inflight = new Map()
-  async function load(key, now, flight) {
+  async function load(key, flight) {
     const value = await loader(key)
     if (!flight.invalidated) {
-      if (value == null) store.set(key, null, negativeTtlMs, now, true)
-      else store.set(key, value, ttlMs, now, false)
+      if (value == null) store.set(key, null, negativeTtlMs, clock(), true)
+      else store.set(key, value, ttlMs, clock(), false)
     }
     return { value, source: 'origin' }
   }
-  async function get(key, now = Date.now()) {
+  async function get(key, now = clock()) {
     const entry = store.get(key, now)
     if (entry) return { value: entry.value, source: entry.negative ? 'negative' : 'cache' }
     if (coalesce && inflight.has(key)) {
@@ -21,7 +22,7 @@ export function createCache(options) {
       return { value: shared.value, source: 'coalesced' }
     }
     const flight = { invalidated: false }
-    const record = { promise: load(key, now, flight), flight }
+    const record = { promise: load(key, flight), flight }
     if (coalesce) inflight.set(key, record)
     try {
       return await record.promise
