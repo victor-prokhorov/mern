@@ -7,5 +7,6 @@ const followSchema = new mongoose.Schema({
 })
 
 followSchema.index({ user: 1, actor: 1 }, { unique: true })
+followSchema.index({ actor: 1 })
 
 export default mongoose.model('Follow', followSchema)

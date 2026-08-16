@@ -7,6 +7,7 @@ import Follow from '../src/models/follow.js'
 import Notification from '../src/models/notification.js'
 import User from '../src/models/user.js'
 import { fanoutNewMovie } from '../src/notifications/fanout.js'
+import * as notificationsRepo from '../src/repositories/notifications.js'
 import { useTestDb } from './helpers.js'
 
 use(chaiHttp)
@@ -243,5 +244,53 @@ describe('POST /api/notifications/:id/read', () => {
     expect(res).to.have.status(401)
     const stored = await Notification.findById(notification._id)
     expect(stored.readAt).to.equal(null)
+  })
+})
+
+describe('notificationsRepo.insertMany', () => {
+  useTestDb()
+
+  it('rethrows a mixed batch where a non-duplicate failure hides behind a duplicate', async () => {
+    const follower = await createUser()
+    const rejectedFollower = await createUser()
+    const actor = await Actor.create({ name: 'Keanu Reeves' })
+    const movieId = new mongoose.Types.ObjectId()
+    await Notification.create({ user: follower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId })
+    await mongoose.connection.db.command({
+      collMod: 'notifications',
+      validator: { user: { $ne: rejectedFollower._id } },
+      validationLevel: 'strict'
+    })
+    const docs = [
+      { user: follower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId },
+      { user: rejectedFollower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId }
+    ]
+
+    let thrown = null
+    try {
+      await notificationsRepo.insertMany(docs)
+    } catch (err) {
+      thrown = err
+    }
+
+    expect(thrown, 'a batch with a non-duplicate write error must throw, not report partial success').to.not.equal(null)
+    expect(thrown.writeErrors).to.have.length(2)
+  })
+
+  it('still swallows a batch that fails only on duplicates', async () => {
+    const follower = await createUser()
+    const actor = await Actor.create({ name: 'Keanu Reeves' })
+    const movieId = new mongoose.Types.ObjectId()
+    await Notification.create({ user: follower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId })
+    const newFollower = await createUser()
+    const docs = [
+      { user: follower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId },
+      { user: newFollower._id, type: 'actor_in_new_movie', actor: actor._id, movie: movieId }
+    ]
+
+    const inserted = await notificationsRepo.insertMany(docs)
+
+    expect(inserted).to.have.length(1)
+    expect(inserted[0].user.toString()).to.equal(newFollower._id.toString())
   })
 })

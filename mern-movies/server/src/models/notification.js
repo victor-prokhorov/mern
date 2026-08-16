@@ -10,5 +10,6 @@ const notificationSchema = new mongoose.Schema({
 })
 
 notificationSchema.index({ user: 1, movie: 1, actor: 1 }, { unique: true })
+notificationSchema.index({ user: 1, readAt: 1, createdAt: -1 })
 
 export default mongoose.model('Notification', notificationSchema)
