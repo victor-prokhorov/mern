@@ -24,6 +24,14 @@ export async function markParked(client, id, error) {
   )
 }
 
+export async function claimPending(client, limit) {
+  const { rows } = await client.query(
+    `SELECT * FROM notifications WHERE state = 'pending' ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1`,
+    [limit]
+  )
+  return rows
+}
+
 export async function findById(client, id) {
   const { rows } = await client.query('SELECT * FROM notifications WHERE id = $1', [id])
   return rows[0] || null

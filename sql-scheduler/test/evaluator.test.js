@@ -69,6 +69,43 @@ describe('alert evaluator', () => {
     expect(acquiredCount).to.equal(1)
   })
 
+  it('a committed notification stranded in pending by a crash before delivery is relayed to delivered', async () => {
+    const server = http.createServer((req, res) => {
+      res.writeHead(200)
+      res.end()
+    })
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${server.address().port}`
+    const rule = await createRuleFixture({ channel: url })
+    const alert = await alertsRepo.create(pool, { ruleId: rule.id, subject: 'crashed', state: 'firing', consecutiveBreaches: 1, consecutiveClears: 0, occurrences: 1 })
+    const notification = await notificationsRepo.create(pool, { alertId: alert.id, channel: url, payload: { ruleId: rule.id } })
+
+    await evaluateRulesTick(pool)
+
+    server.close()
+    const stored = await notificationsRepo.findById(pool, notification.id)
+
+    expect(stored.state).to.equal('delivered')
+    expect(stored.delivered_at).to.not.equal(null)
+  })
+
+  it('a notification stranded mid-retry is driven to parked with only its remaining attempts', async () => {
+    const rule = await createRuleFixture({ channel: 'http://127.0.0.1:1' })
+    const alert = await alertsRepo.create(pool, { ruleId: rule.id, subject: 'mid-retry', state: 'firing', consecutiveBreaches: 1, consecutiveClears: 0, occurrences: 1 })
+    const notification = await notificationsRepo.create(pool, { alertId: alert.id, channel: 'http://127.0.0.1:1', payload: { ruleId: rule.id } })
+    await notificationsRepo.markFailedAttempt(pool, notification.id, 'attempt 1')
+    await notificationsRepo.markFailedAttempt(pool, notification.id, 'attempt 2')
+    await notificationsRepo.markFailedAttempt(pool, notification.id, 'attempt 3')
+
+    await evaluateRulesTick(pool)
+
+    const stored = await notificationsRepo.findById(pool, notification.id)
+
+    expect(stored.state).to.equal('parked')
+    expect(stored.attempts).to.equal(5)
+    expect(stored.last_error).to.not.equal(null)
+  })
+
   it('a forced unique-violation race on first creation is absorbed by a savepoint, not thrown', async () => {
     const rule = await createRuleFixture({ forEvaluations: 1 })
     const subject = 'race-subject'
