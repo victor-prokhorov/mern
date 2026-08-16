@@ -31,6 +31,7 @@ spot rather than a thing that doesn't matter.
 - ACID, isolation levels (READ COMMITTED, REPEATABLE READ, SERIALIZABLE) `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
 - Lost update vs write skew vs phantoms `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
 - Optimistic vs pessimistic locking, compare-and-swap, ETag/If-Match `[covered]` ([concurrency](mern-tickets/server/src/concurrency/README.md))
+- TOCTOU (time-of-check-to-time-of-use) / check-then-act races — the name for the bug behind lost updates and check-then-insert `[covered]` (demonstrated, not labelled: ([idempotency](mern-shop/server/src/idempotency/README.md)) check-then-act, ([ledger](sql-ledger/src/ledger/README.md)) lost update)
 - Row locking, `FOR UPDATE`, `SKIP LOCKED`, advisory locks `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [migrations](sql-ledger/src/migrations/README.md))
 - Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
 - CAP / PACELC, replication lag, read-your-writes, monotonic reads `[roadmap]` (must-have #2)
@@ -51,6 +52,7 @@ spot rather than a thing that doesn't matter.
 
 ### Caching and performance
 - Cache-aside, write-through, write-behind `[roadmap]` (must-have #1)
+- Cache eviction policies: LRU, LFU, FIFO, ARC, TTL, and size/memory pressure `[roadmap]` (must-have #1)
 - TTL vs invalidation, negative caching, stale-while-revalidate `[roadmap]` (must-have #1)
 - Cache stampede / thundering herd, single-flight, early expiry `[roadmap]` (must-have #1)
 - HTTP caching: Cache-Control, ETag, 304, CDN edge `[roadmap]` (must-have #1)
@@ -88,6 +90,8 @@ spot rather than a thing that doesn't matter.
 - Graceful shutdown, connection draining `[covered]` ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md))
 - Fail-open vs fail-closed per domain `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
 - Cascading failure, thundering herd on recovery `[covered]` (concept across breaker/backoff guides)
+- Dependability taxonomy: fault vs error vs failure (Avizienis), MTBF/MTTR, blast radius — the vocabulary — not built
+- Fault tolerance vs fault avoidance, redundancy, graceful degradation `[covered]` (concept, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) fallbacks)
 
 ### Observability and operations
 - Structured logging, correlation ids, AsyncLocalStorage `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
@@ -95,7 +99,8 @@ spot rather than a thing that doesn't matter.
 - Distributed tracing, spans, OpenTelemetry `[covered]` (concept, ([observability](mern-tickets/server/src/observability/README.md)))
 - Health checks: liveness vs readiness `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
 - Alerting: dedup, hysteresis, cooldown, liveness vs lag rules `[covered]` ([alerting](sql-scheduler/src/alerting/README.md))
-- SLOs, error budgets — concept only
+- Latency as a distribution: p50/p95/p99/p999, tail latency, why averages lie `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) slow-is-worse-than-failed, ([observability](mern-tickets/server/src/observability/README.md)) duration histogram) — no dedicated treatment
+- Availability, SLIs/SLOs/error budgets, the nines — not built (mechanics exist; the discipline does not)
 
 ### Microservices and inter-service communication
 - Sync RPC vs async messaging vs shared-DB integration — choosing the boundary — not built
@@ -120,6 +125,21 @@ spot rather than a thing that doesn't matter.
 - Service mesh at the platform layer (Istio/Linkerd) — see inter-service comms above
 - Serverless (Lambda, Cloud Run) as the alternative to orchestrating long-lived processes `[covered]` (concept, across the AWS/GCP sections)
 
+### Networking fundamentals
+- OSI model and the TCP/IP layers (link, internet/IP, transport, application) — not built
+- TCP vs UDP: handshakes, ordering, flow/congestion control, when UDP wins — not built
+- IP, routing, NAT, ports; DNS resolution and caching — not built
+- HTTP/1.1 vs HTTP/2 (multiplexing) vs HTTP/3 (QUIC); keep-alive, head-of-line blocking — partial (HTTP/2 comes up in the gRPC line; keep-alive in ([observability](mern-tickets/server/src/observability/README.md)) shutdown)
+- TLS: handshake, certificates, mTLS, termination at the edge — not built
+- Load balancers (L4 vs L7), reverse proxies, connection pooling — concept only
+
+### Regionalization and geo-distribution
+- Single-region vs multi-region; active-active vs active-passive — not built
+- Latency-based / geo routing, anycast, edge/CDN presence — not built
+- Cross-region replication and its lag; conflict handling — links to must-have #2 (replication)
+- Data residency and sovereignty (GDPR, regional data boundaries) — not built
+- Regional failover, disaster recovery, RPO/RTO — not built
+
 ### Scaling and distribution
 - Horizontal vs vertical scaling, statelessness — concept only
 - Read replicas and replica routing `[roadmap]` (must-have #2)
@@ -127,6 +147,7 @@ spot rather than a thing that doesn't matter.
 - Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md))
 - Per-process vs shared state (breaker, health) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
 - Consistent hashing — not built
+- Multi-region topology and geo-distribution — see the Regionalization group above
 
 ### Deployment and release
 - Blue-green, canary, rolling deploys `[roadmap]` (must-have #4)
@@ -142,6 +163,7 @@ spot rather than a thing that doesn't matter.
 
 ### Domain and architecture
 - Layered architecture, dependency direction `[covered]` (enforced repo-wide; sql `check-layers.js`)
+- Domain-driven design: bounded contexts, aggregates as consistency boundaries, ubiquitous language, context mapping — partial (aggregate/embedding shapes in ([domain modelling](mern-movies/server/src/movies/README.md)); DDD proper not built)
 - State machines vs scattered conditionals `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md))
 - Rules engines vs ML, explainable decisions `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Recommendations: content vs collaborative filtering, cold start `[covered]` ([recommendations](mern-movies/server/src/recommendations/README.md))
