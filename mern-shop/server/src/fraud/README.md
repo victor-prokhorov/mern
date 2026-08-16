@@ -18,7 +18,7 @@ A rules-based check, run at checkout, that looks at a handful of signals about t
    | `HIGH_VALUE` | 20 | order total above 200 |
    | `QUANTITY_ANOMALY` | 25 | any single line quantity above 10 |
    | `EMAIL_MISMATCH` | 5 | checkout email differs from the account email after `normalizeEmail` |
-   | `BLOCKED_DOMAIN` | 100 | checkout email's domain is on the blocklist |
+   | `BLOCKED_DOMAIN` | 100 | checkout email is on the blocklist — the check is `isBlockedEmail(customer.email)`, so a matching `email`-type entry triggers it too, not only a `domain`-type one; the signal's name is narrower than its actual input |
 
    `EMAIL_MISMATCH` reuses the blocklist's `normalizeEmail` so alias tricks don't create false mismatches. Because the account-identity gate above no longer inspects `customer.email`, `BLOCKED_DOMAIN` is a live, reachable signal: a checkout email on a blocked domain is not rejected before scoring runs, it is scored, and its weight — 100, on its own already past the deny threshold — is what refuses the order. Note what that weight really means: a signal weighted above the deny threshold is a hard gate wearing a score's clothing. It is worth being deliberate about whether you want that, because it makes the score non-compensatory for that one signal: no combination of reassuring evidence can outvote it.
 5. `services/orders.js:32` passes the six signal results to `score()` (`fraud/score.js:3-9`), which sums the `weight` of every `triggered` signal into a single number, collects the `code` of every triggered signal into `reasons`, and maps the total onto one of three decisions using the single exported `THRESHOLDS` constant (`fraud/score.js:1`): below 30 is `allow`, 30 up to (not including) 70 is `review`, 70 and above is `deny`.

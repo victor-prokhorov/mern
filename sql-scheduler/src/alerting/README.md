@@ -287,6 +287,16 @@ regression a previous pass introduced and this one closes.
   concurrently and one dead upstream can't stall the rest — exactly the
   `sql-jobs` app's job, not a `Promise.all` bolted onto this sweep.
 
+## In the real world (AWS / GCP)
+
+Every mechanism in this module has a named knob in the managed monitoring stacks — knowing the mapping is what lets you configure them deliberately instead of accepting defaults:
+
+- **Hysteresis (`for_evaluations`)** is CloudWatch's "M out of N datapoints to alarm" (AWS) and the `duration` field on a Cloud Monitoring alerting policy condition (GCP: "the condition must hold for 5 minutes before the incident opens"). Same trade in both: bigger window, fewer flaps, slower detection.
+- **The alert lifecycle (`pending → firing → resolved`)** is CloudWatch's `OK / ALARM / INSUFFICIENT_DATA` states and Cloud Monitoring's incident open/close. `INSUFFICIENT_DATA` is worth studying — it is the state this toy doesn't have, for "the metric stopped arriving at all," and treating it as OK is the classic way a dead reporter goes unnoticed. This module's `missed_run` rule is the hand-built version of that concern.
+- **Dedup (one open alert per rule+subject, `occurrences` incrementing)** is what both platforms do natively: an alarm in `ALARM` staying in `ALARM` sends nothing new. Renotification-with-cooldown is not native to CloudWatch (an alarm notifies on transition only — teams bolt on Step Functions or PagerDuty for re-pages); Cloud Monitoring has it directly as notification-channel renotification intervals. Paging tools (**PagerDuty, Opsgenie**) add the layer above: grouping many alerts into one incident, escalation, ack.
+- **Delivery** goes through **SNS** (AWS) or notification channels (GCP) instead of your own `deliverWithRetry` — retries, fan-out, and DLQs become the platform's problem.
+- **What stays yours: the rule definitions.** `missed_run` vs `scheduling_lag` — liveness vs latency — is a domain decision no platform makes for you; the equivalent production shape is a heartbeat/absence alarm plus a p95-latency alarm on the same job, and teams routinely ship only the first and miss exactly what the "case a liveness check misses" test demonstrates.
+
 ## Try it
 
 Point a rule's channel at a local upstream you control, the same two-route

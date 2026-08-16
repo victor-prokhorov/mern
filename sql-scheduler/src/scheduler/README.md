@@ -252,6 +252,13 @@ this toy skips" below.
   and the advisory lock picks exactly one to act; that's fine at this app's
   scale and would need rethinking at a much larger one.
 
+## In the real world (AWS / GCP)
+
+- **The managed replacements for the tick loop.** AWS **EventBridge Scheduler** is the closest match: per-schedule cron or rate expressions *with a per-schedule IANA timezone* (it handles DST for you), one-off schedules, a flexible time window (managed jitter), and an at-least-once invoke of a target (Lambda, SQS, Step Functions). GCP **Cloud Scheduler** is the same shape (cron + timezone per job, HTTP/Pub/Sub target, retry config); for one-shot "run this at instant X" work, **Cloud Tasks** with a schedule time is the better fit. Both replace `tick()`, the advisory lock, and the jitter module in one move — one schedule row in their control plane per schedule row in your table.
+- **What they do not replace: your catch-up policy and your run history.** EventBridge Scheduler and Cloud Scheduler both simply *miss* occurrences while a target is failing or a schedule was disabled — there is no `catchup_policy: all` that replays a six-hour backlog, and no `runs` table unless you write one. If missed occurrences must be executed (billing cycles, digests), you still own exactly the `collectBacklog` logic this module implements, driven off your own `next_run_at`/`runs` state. This is the most common surprise when teams migrate: the managed service schedules; it does not reconcile.
+- **The dedupe constraint stays yours too.** Both services are at-least-once, and EventBridge Scheduler documents that a target can be invoked more than once. `UNIQUE (schedule_id, occurrence_at)` — or an idempotency key derived from exactly that pair, checked by the target — is the portable safety half; carry it into the Lambda/Cloud Run handler.
+- **When you outgrow both**: many-step workflows with waits and retries per step become **Step Functions** (AWS) / **Workflows** or **Cloud Composer** (GCP); massive per-user schedule counts (millions of rows, each with its own cadence) are exactly what EventBridge Scheduler was built for and where a single Postgres tick table starts needing the sharding this toy skips.
+
 ## Try it
 
 ```bash

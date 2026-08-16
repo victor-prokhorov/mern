@@ -54,6 +54,13 @@ A mechanism that lets a client safely retry `POST /api/orders` after a timeout o
 - No admin visibility into stored idempotency records — there's no endpoint to inspect, list, or manually expire a key, which an operator debugging a stuck client would want.
 - The fingerprint canonicalises key order and nested objects/arrays but has no defined behaviour for values whose JSON serialization is inherently unstable (e.g. `NaN`, `undefined` inside an array) — this app's request bodies don't exercise that edge, so it's untested here.
 
+## In the real world (AWS / GCP)
+
+- **No gateway does this for you.** API Gateway (AWS) and Cloud Endpoints/Apigee (GCP) can throttle, authenticate, and cache, but none of them implement Idempotency-Key claim/replay semantics for a mutating POST — the pattern in this README stays application code wherever you deploy. What changes is the claim store.
+- **The claim store maps onto conditional writes.** This middleware's insert-against-a-unique-index becomes a **DynamoDB `PutItem` with `attribute_not_exists(pk)`** (AWS) or a **Firestore `create()`** (GCP) — both fail atomically if the key exists, which is the same first-insert-wins race resolution. The TTL index becomes DynamoDB TTL / Firestore TTL policies; the epoch fence stays a plain conditioned update in either.
+- **AWS ships a reference implementation worth reading**: **Lambda Powertools' idempotency utility** is this exact middleware — key claim in DynamoDB, in-progress state with an expiry (their `in_progress_expiry` is this app's lease), stored response replay, payload-hash validation (this app's fingerprint). Comparing its design decisions against this README is a fast way to check you understood both.
+- **Where the key comes from matters more at scale**: Stripe, Adyen, and most payment APIs require the header on money-moving endpoints; internally, event-driven consumers (SQS/Pub/Sub handlers) apply the same pattern with the message id as the key — that is the "inbox" side, and it is the same table shape with the broker supplying the key instead of the client.
+
 ## Try it
 
 With the dev server running (`npm run dev`) and seed data loaded, log in and add something to a cart first — identity now comes from the access token, per `../session/README.md`, not from anything in the order body:
