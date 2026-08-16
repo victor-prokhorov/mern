@@ -17,10 +17,11 @@ toy skips, and further reading.
 | [mern-movies](mern-movies/) | Movie API. Recommendations and follow/notify fan-out. Server only. |
 | [sql-ledger](sql-ledger/) | Postgres double-entry ledger. Transactional outbox, zero-downtime expand-contract migrations, keyset pagination. Server only. |
 | [sql-jobs](sql-jobs/) | Postgres async job queue. Fenced leases, the reaper, backoff/jitter, dead-lettering, per-account fairness. Server only. |
+| [sql-scheduler](sql-scheduler/) | Postgres-backed scheduling and alarming. Timezone-correct cadences, exactly-once ticking, catch-up policies, and alert deduplication/hysteresis. Server only. |
 
 ## Topics
 
-Twenty-three guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
+Twenty-six guides, each beside the code it describes — mutation testing counts as one, same as every other row in the table below.
 
 | Topic | Where |
 |---|---|
@@ -46,6 +47,9 @@ Twenty-three guides, each beside the code it describes — mutation testing coun
 | Keyset pagination | [sql-ledger/src/pagination](sql-ledger/src/pagination/README.md) |
 | Transactional outbox | [sql-ledger/src/outbox](sql-ledger/src/outbox/README.md) |
 | Job queue: fenced leases, backoff/jitter, dead-lettering, fairness | [sql-jobs/src/queue](sql-jobs/src/queue/README.md) |
+| Timezone-correct cadences and DST | [sql-scheduler/src/cadence](sql-scheduler/src/cadence/README.md) |
+| Exactly-once ticking, catch-up policies, drift | [sql-scheduler/src/scheduler](sql-scheduler/src/scheduler/README.md) |
+| Alert dedup, hysteresis, cooldown | [sql-scheduler/src/alerting](sql-scheduler/src/alerting/README.md) |
 | Mutation testing | [tools/mutation](tools/mutation/README.md) |
 
 Several topics are treated more than once, from different angles, and the pairs are worth reading together: idempotency as a client-supplied key ([shop](mern-shop/server/src/idempotency/README.md)) against a natural business key ([ledger](sql-ledger/src/ledger/README.md)) against a unique index used for fan-out dedupe ([movies](mern-movies/server/src/notifications/README.md)); rate limiting as a fixed window at the edge ([shop](mern-shop/server/src/rateLimit/README.md)) against a token bucket per authenticated actor ([tickets](mern-tickets/server/src/throttle/README.md)); and the transactional outbox described as the fix a Mongo app cannot reach for ([movies](mern-movies/server/src/notifications/README.md)) next to a working one ([ledger](sql-ledger/src/outbox/README.md)).
@@ -119,11 +123,12 @@ npm test        # drops and rebuilds its own <app>-test database on every test
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-392 tests across five apps (124 shop, 141 tickets, 58 movies, 46 ledger,
-23 jobs), plus a mutation-testing tool under `tools/mutation` that audits how
-much those tests actually prove.
-The MERN suites need a reachable MongoDB; `sql-ledger` and `sql-jobs` need a
-reachable Postgres and each creates its own `<app>_test` database on first run.
+455 tests across six apps (124 shop, 141 tickets, 58 movies, 46 ledger,
+26 jobs, 63 scheduler), plus a mutation-testing tool under `tools/mutation`
+that audits how much those tests actually prove.
+The MERN suites need a reachable MongoDB; `sql-ledger`, `sql-jobs` and
+`sql-scheduler` need a reachable Postgres and each creates its own
+`<app>_test` database on first run.
 
 ## Mutation testing
 
