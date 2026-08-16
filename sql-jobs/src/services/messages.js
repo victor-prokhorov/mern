@@ -34,6 +34,10 @@ export async function getMessage({ messageId }) {
   return message
 }
 
+export async function markDeliveryFailed(job) {
+  await messagesRepo.markFailed(pool, job.payload.messageId)
+}
+
 export async function deliverMessage(job) {
   const { messageId, recipient, body, upstreamUrl } = job.payload
   const claimed = await messagesRepo.beginSending(pool, messageId)

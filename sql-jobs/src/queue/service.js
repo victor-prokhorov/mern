@@ -1,4 +1,5 @@
 import * as jobsRepo from '../repositories/jobs.js'
+import { getDeadHandler } from './handlers.js'
 import { backoffMs } from './backoff.js'
 
 export async function enqueue(pool, { kind, payload, runAt, priority, maxAttempts }) {
@@ -10,7 +11,13 @@ export async function claimJobs(pool, { workerId, kinds = null, limit = 1, lease
 }
 
 export async function reapExpired(pool, options) {
-  return jobsRepo.reapExpired(pool, options)
+  const reaped = await jobsRepo.reapExpired(pool, options)
+  for (const job of reaped) {
+    if (job.status !== 'dead') continue
+    const onDead = getDeadHandler(job.kind)
+    if (onDead) await onDead(job)
+  }
+  return reaped
 }
 
 export async function heartbeat(pool, { jobId, workerId, lockedAt, leaseMs = 10000 }) {
