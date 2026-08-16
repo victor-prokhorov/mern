@@ -10,7 +10,9 @@ import { runWithContext, getContext } from '../src/observability/context.js'
 import { logger, setWriter, resetWriter } from '../src/observability/logger.js'
 import { register, run, reset as resetHooks } from '../src/hooks/registry.js'
 import { createCircuitBreaker } from '../src/circuitBreaker/breaker.js'
-import { reset as resetMetrics } from '../src/observability/metrics.js'
+import { reset as resetMetrics, renderMetrics } from '../src/observability/metrics.js'
+import { createNotifier } from '../src/notifier/webhook.js'
+import { routeTemplateFor } from '../src/observability/routeTemplate.js'
 import { createGracefulShutdown } from '../src/observability/shutdown.js'
 import { setReady, isReady } from '../src/observability/health.js'
 
@@ -22,6 +24,24 @@ function captureLines() {
   const lines = []
   setWriter((line) => lines.push(JSON.parse(line)))
   return lines
+}
+
+function mountPathOf(layer) {
+  if (layer.regexp.fast_slash) return ''
+  return layer.regexp.source.replace(/^\^/, '').replace(/\\\/\?\(\?=\\\/\|\$\)$/, '').replace(/\\\//g, '/')
+}
+
+function collectRoutes(stack, prefix) {
+  const collected = []
+  for (const layer of stack) {
+    if (layer.route) {
+      const path = layer.route.path === '/' ? prefix || '/' : `${prefix}${layer.route.path}`
+      for (const method of Object.keys(layer.route.methods)) collected.push({ method: method.toUpperCase(), path })
+    } else if (layer.handle && layer.handle.stack) {
+      collected.push(...collectRoutes(layer.handle.stack, `${prefix}${mountPathOf(layer)}`))
+    }
+  }
+  return collected
 }
 
 async function waitUntil(predicate, timeoutMs = 2000) {
@@ -190,6 +210,37 @@ describe('observability', () => {
       expect(metricsRes.text).to.not.include(first.body._id)
       expect(metricsRes.text).to.not.include(second.body._id)
       expect(metricsRes.text).to.include('route="/api/tickets/:id"')
+    })
+  })
+
+  describe('route template coverage', () => {
+    it('templates every route the Express app actually registers, so a new route cannot silently become route="unmatched"', () => {
+      const registered = collectRoutes(app._router.stack, '')
+
+      const templated = registered.map((route) => ({ ...route, template: routeTemplateFor(route.method, route.path.replace(/:[^/]+/g, 'probe-segment')) }))
+
+      expect(registered.map((route) => `${route.method} ${route.path}`)).to.include('GET /api/tickets/:id')
+      expect(templated.filter((route) => route.template === 'unmatched')).to.deep.equal([])
+      expect(templated.filter((route) => route.template !== route.path)).to.deep.equal([])
+    })
+  })
+
+  describe('circuit breaker metrics', () => {
+    beforeEach(() => resetMetrics())
+
+    it('exports a breaker transition as both a state gauge and a transitions counter', async () => {
+      const server = http.createServer((req, res) => { res.writeHead(500); res.end() })
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const notifier = createNotifier({ url: `http://127.0.0.1:${server.address().port}`, minimumThroughput: 1, failureRateThreshold: 0.5 })
+
+      await notifier.notify({ type: 'ticket_created' })
+      const rendered = renderMetrics()
+
+      expect(notifier.state).to.equal('open')
+      expect(rendered).to.include('circuit_breaker_state{breaker="webhook",state="open"} 1')
+      expect(rendered).to.include('circuit_breaker_state{breaker="webhook",state="closed"} 0')
+      expect(rendered).to.include('circuit_breaker_transitions_total{breaker="webhook",from="closed",to="open"} 1')
+      await new Promise((resolve) => server.close(resolve))
     })
   })
 

@@ -36,12 +36,12 @@ export function EMAIL_MISMATCH({ user, customer }) {
   return { code: 'EMAIL_MISMATCH', weight: 5, triggered, detail: triggered ? 'checkout email differs from the account email' : null }
 }
 
-export function BLOCKED_DOMAIN({ stats }) {
+export function BLOCKED_RECIPIENT({ stats }) {
   const triggered = Boolean(stats?.isDomainBlocked)
-  return { code: 'BLOCKED_DOMAIN', weight: 100, triggered, detail: triggered ? 'checkout email domain is on the blocklist' : null }
+  return { code: 'BLOCKED_RECIPIENT', weight: 100, triggered, detail: triggered ? 'checkout email or its domain is on the blocklist' : null }
 }
 
-export const signalFns = [NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_DOMAIN]
+export const signalFns = [NEW_ACCOUNT, ORDER_VELOCITY, HIGH_VALUE, QUANTITY_ANOMALY, EMAIL_MISMATCH, BLOCKED_RECIPIENT]
 
 export function evaluateSignals(context) {
   const now = context.now ?? Date.now()
