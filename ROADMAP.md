@@ -3,7 +3,7 @@
 Three things, in order: (1) the master concept checklist — the full list of
 what a senior/staff backend engineer and architect should master, grouped by
 area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
-unmarked if it is a real gap not in this repo yet; (2) the index of the 26
+unmarked if it is a real gap not in this repo yet; (2) the index of the 27
 guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
 in priority order. Scan section 1 to pick a weakness; jump to section 2 for
 anything already built.
@@ -34,7 +34,7 @@ spot rather than a thing that doesn't matter.
 - TOCTOU (time-of-check-to-time-of-use) / check-then-act races — the name for the bug behind lost updates and check-then-insert `[covered]` (demonstrated, not labelled: ([idempotency](mern-shop/server/src/idempotency/README.md)) check-then-act, ([ledger](sql-ledger/src/ledger/README.md)) lost update)
 - Row locking, `FOR UPDATE`, `SKIP LOCKED`, advisory locks `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [migrations](sql-ledger/src/migrations/README.md))
 - Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
-- CAP / PACELC, replication lag, read-your-writes, monotonic reads `[roadmap]` (must-have #2)
+- CAP / PACELC, replication lag, read-your-writes, monotonic reads `[covered]` ([replication](sql-replica/src/replication/README.md))
 - CRDTs and convergent merge (the step past whole-document rejection) `[covered]` (concept only, ([concurrency](mern-tickets/server/src/concurrency/README.md)))
 - Distributed transactions, two-phase commit, and why they are avoided `[roadmap]` (must-have #3)
 - Sagas and compensation (orchestration vs choreography) `[roadmap]` (must-have #3)
@@ -136,13 +136,13 @@ spot rather than a thing that doesn't matter.
 ### Regionalization and geo-distribution
 - Single-region vs multi-region; active-active vs active-passive — not built
 - Latency-based / geo routing, anycast, edge/CDN presence — not built
-- Cross-region replication and its lag; conflict handling — links to must-have #2 (replication)
+- Cross-region replication and its lag; conflict handling — lag and single-leader routing `[covered]` ([replication](sql-replica/src/replication/README.md)); multi-leader conflict handling not built
 - Data residency and sovereignty (GDPR, regional data boundaries) — not built
 - Regional failover, disaster recovery, RPO/RTO — not built
 
 ### Scaling and distribution
 - Horizontal vs vertical scaling, statelessness — concept only
-- Read replicas and replica routing `[roadmap]` (must-have #2)
+- Read replicas and replica routing `[covered]` ([replication](sql-replica/src/replication/README.md))
 - Sharding / partitioning strategies — not built
 - Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md))
 - Per-process vs shared state (breaker, health) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
@@ -198,11 +198,12 @@ spot rather than a thing that doesn't matter.
 24. [Exactly-once ticking, catch-up, drift](sql-scheduler/src/scheduler/README.md) — advisory lock for liveness, unique constraint for safety, catch-up policies (all/skip/none), grid anchoring against drift, deterministic jitter
 25. [Alert dedup, hysteresis, cooldown](sql-scheduler/src/alerting/README.md) — pending/firing/resolved lifecycle, for_evaluations, consecutive clears, cooldown renotification, liveness vs lag rules, forcing real races in tests
 26. [Mutation testing](tools/mutation/README.md) — mutation operators, kill vs survivor, why coverage lies, seeded sampling, resumable runs
+27. [Replication and read-after-write consistency](sql-replica/src/replication/README.md) — replication lag as bounded staleness, primary/replica read routing, read-your-writes (sticky-primary window vs write-position token), monotonic reads and session pinning, CAP vs PACELC, why a ledger reads the primary
 
 ## Roadmap — must-have
 
 1. **Caching** — cache-aside vs write-through, TTL vs explicit invalidation, cache stampede protection (request coalescing, locks, probabilistic early expiry), HTTP caching (`Cache-Control`, ETag-for-caching, 304s), CDN layer, negative caching, stale-while-revalidate
-2. **Replication and consistency** — read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
+2. **Replication and consistency** — built: [sql-replica/src/replication](sql-replica/src/replication/README.md). Read replicas, replication lag, read-your-writes, monotonic reads, primary vs replica routing, CAP/PACELC vocabulary, why "read replica right after write" breaks checkout
 3. **Sagas / distributed transactions** — compensation, orchestration vs choreography, saga state machines, pivot transactions, why two-phase commit is avoided, building on outbox + queue
 4. **Feature flags and deploy strategies** — percentage rollout, targeting, kill switches, flag lifecycle and cleanup debt, blue-green and canary deploys, flags as expand-contract for behavior
 5. **Web security: injection classes** — NoSQL/SQL injection, XSS (stored/reflected/DOM), CSRF and why token-in-header auth changes it, SSRF, prototype pollution, input validation boundaries, output encoding
