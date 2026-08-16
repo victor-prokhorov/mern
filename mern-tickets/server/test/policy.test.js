@@ -58,7 +58,7 @@ describe('policy engine', () => {
     expect(decision.ruleId).to.equal('admin-no-delete')
   })
 
-  it('only allows an admin to transition a closed ticket', () => {
+  it('exempts only admins from the closed-ticket deny at the policy layer, though the domain still refuses the transition', () => {
     const closedTicket = { reporter: new ObjectId().toString(), teamId: 'team-a', status: 'closed' }
     const admin = { id: new ObjectId().toString(), role: 'admin', teamId: 'team-a' }
     const agent = { id: new ObjectId().toString(), role: 'agent', teamId: 'team-a' }

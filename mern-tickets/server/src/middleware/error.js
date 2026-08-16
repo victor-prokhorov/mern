@@ -1,3 +1,5 @@
+import { logger } from '../observability/logger.js'
+
 export class NotFoundError extends Error {
   constructor(message) {
     super(message)
@@ -62,5 +64,6 @@ export function errorHandler(err, req, res, next) {
     return res.status(412).json({ error: err.message, version: err.version, ticket: err.ticket })
   }
   if (err.status) return res.status(err.status).json({ error: err.message })
+  logger.error('unhandled error', { error: err.message, stack: err.stack })
   res.status(500).json({ error: 'internal server error' })
 }

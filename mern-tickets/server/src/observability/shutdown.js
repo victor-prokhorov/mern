@@ -5,7 +5,10 @@ export function createGracefulShutdown({ server, closeStore, setNotReady, drainT
     shuttingDown = true
     setNotReady()
     await new Promise((resolve) => {
-      const timer = setTimeout(resolve, drainTimeoutMs)
+      const timer = setTimeout(() => {
+        clearInterval(idleSweep)
+        resolve()
+      }, drainTimeoutMs)
       const idleSweep = setInterval(() => server.closeIdleConnections(), 50)
       server.close(() => {
         clearTimeout(timer)
