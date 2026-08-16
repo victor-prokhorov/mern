@@ -17,6 +17,21 @@ export async function create(client, { ruleId, subject, state, consecutiveBreach
   return rows[0]
 }
 
+export async function createGuarded(client, args) {
+  await client.query('SAVEPOINT alert_insert')
+  try {
+    const alert = await create(client, args)
+    await client.query('RELEASE SAVEPOINT alert_insert')
+    return alert
+  } catch (err) {
+    if (err.code === UNIQUE_VIOLATION) {
+      await client.query('ROLLBACK TO SAVEPOINT alert_insert')
+      return null
+    }
+    throw err
+  }
+}
+
 export async function updateProgress(client, id, { state, consecutiveBreaches, consecutiveClears, occurrences, lastNotifiedAt, resolvedAt }) {
   const { rows } = await client.query(
     `UPDATE alerts SET state = $1, consecutive_breaches = $2, consecutive_clears = $3, occurrences = $4,

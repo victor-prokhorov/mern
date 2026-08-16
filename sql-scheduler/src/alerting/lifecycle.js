@@ -1,6 +1,7 @@
 import { withTransaction } from '../db.js'
 import * as alertsRepo from '../repositories/alerts.js'
 import * as notificationsRepo from '../repositories/notifications.js'
+import * as clockRepo from '../repositories/clock.js'
 
 function buildPayload(rule, alert, subject) {
   return { ruleId: rule.id, kind: rule.kind, subject, state: alert.state, occurrences: alert.occurrences }
@@ -71,35 +72,46 @@ async function onClear(client, rule, subject, existing, now) {
   )
 }
 
-export async function evaluate(pool, rule, subject, breached, { now = new Date() } = {}) {
+async function onFirstBreach(client, rule, subject, now) {
+  const startsFiring = rule.for_evaluations <= 1
+  const created = await alertsRepo.createGuarded(client, {
+    ruleId: rule.id,
+    subject,
+    state: startsFiring ? 'firing' : 'pending',
+    consecutiveBreaches: 1,
+    consecutiveClears: 0,
+    occurrences: 1
+  })
+  if (!created) {
+    const winner = await alertsRepo.findOpen(client, rule.id, subject)
+    if (!winner) return { alert: null, notification: null }
+    return onBreach(client, rule, subject, winner, now)
+  }
+  if (!startsFiring) return { alert: created, notification: null }
+  return persist(
+    client,
+    rule,
+    subject,
+    created.id,
+    {
+      state: created.state,
+      consecutiveBreaches: created.consecutive_breaches,
+      consecutiveClears: created.consecutive_clears,
+      occurrences: created.occurrences,
+      resolvedAt: null
+    },
+    true,
+    now
+  )
+}
+
+export async function evaluate(pool, rule, subject, breached, options = {}) {
   return withTransaction(async (client) => {
+    const now = options.now || (await clockRepo.now(client))
     const existing = await alertsRepo.findOpen(client, rule.id, subject)
     if (!existing) {
       if (!breached) return { alert: null, notification: null }
-      const startsFiring = rule.for_evaluations <= 1
-      const created = await alertsRepo.create(client, {
-        ruleId: rule.id,
-        subject,
-        state: startsFiring ? 'firing' : 'pending',
-        consecutiveBreaches: 1,
-        consecutiveClears: 0,
-        occurrences: 1
-      })
-      if (!startsFiring) return { alert: created, notification: null }
-      const notification = await notificationsRepo.create(client, {
-        alertId: created.id,
-        channel: rule.channel,
-        payload: buildPayload(rule, created, subject)
-      })
-      await alertsRepo.updateProgress(client, created.id, {
-        state: created.state,
-        consecutiveBreaches: created.consecutive_breaches,
-        consecutiveClears: created.consecutive_clears,
-        occurrences: created.occurrences,
-        lastNotifiedAt: now,
-        resolvedAt: null
-      })
-      return { alert: created, notification }
+      return onFirstBreach(client, rule, subject, now)
     }
     if (breached) return onBreach(client, rule, subject, existing, now)
     return onClear(client, rule, subject, existing, now)
