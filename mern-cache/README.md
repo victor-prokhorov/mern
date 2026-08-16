@@ -1,6 +1,6 @@
 # mern-cache
 
-A tiny product-catalogue API built to teach one thing properly: caching. A hand-built in-process cache sits in front of a deliberately slow MongoDB "origin", so cache-aside, TTL expiry, invalidation-on-write, negative caching, and single-flight stampede protection are all visible in code rather than hidden inside Redis. API only, no client. Layering matches `mern-shop/server` and `mern-tickets/server`: `routes/` wire, `controllers/` adapt HTTP, `services/` hold rules, `repositories/` own every Mongoose call, and the cache mechanism lives in `src/cache/`.
+A tiny product-catalogue API built to teach one thing properly: caching. A hand-built in-process cache sits in front of a deliberately slow MongoDB "origin", so cache-aside, TTL expiry, invalidation-on-write, negative caching, and single-flight stampede protection are all visible in code rather than hidden inside Redis. API only, no client. Layering matches `mern-shop/server` and `mern-tickets/server`: `routes/` wire, `controllers/` adapt HTTP, `services/` hold rules, `repositories/` own every Mongoose call, and the cache mechanism lives in `server/src/cache/`.
 
 ## Requirements
 

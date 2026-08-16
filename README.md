@@ -53,7 +53,7 @@ Twenty-nine guides, each beside the code it describes — mutation testing count
 | Timezone-correct cadences and DST | [sql-scheduler/src/cadence](sql-scheduler/src/cadence/README.md) |
 | Exactly-once ticking, catch-up policies, drift | [sql-scheduler/src/scheduler](sql-scheduler/src/scheduler/README.md) |
 | Alert dedup, hysteresis, cooldown | [sql-scheduler/src/alerting](sql-scheduler/src/alerting/README.md) |
-| Caching: cache-aside, TTL vs invalidation, single-flight, HTTP caching | [mern-cache/src/cache](mern-cache/server/src/cache/README.md) |
+| Caching: cache-aside, TTL vs invalidation, single-flight, HTTP caching | [mern-cache/server/src/cache](mern-cache/server/src/cache/README.md) |
 | Replication, read-after-write, monotonic reads | [sql-replica/src/replication](sql-replica/src/replication/README.md) |
 | Sagas, compensation, distributed transactions | [sql-saga/src/saga](sql-saga/src/saga/README.md) |
 | Mutation testing | [tools/mutation](tools/mutation/README.md) |
@@ -146,15 +146,15 @@ npm run dev
 ## Running the SQL apps
 
 Different shape: no `server/` subdirectory, and migrations instead of (or in
-addition to) fixtures. `sql-ledger` has no seed script; `sql-jobs` and
-`sql-scheduler` have one.
+addition to) fixtures. `sql-ledger` and `sql-replica` have no seed script;
+`sql-jobs`, `sql-scheduler`, and `sql-saga` have one.
 
 ```bash
 cd sql-ledger   # or sql-jobs / sql-scheduler / sql-replica / sql-saga
 npm install
 cp .env.example .env
 npm run migrate
-npm run seed    # sql-jobs and sql-scheduler only
+npm run seed    # sql-jobs, sql-scheduler, and sql-saga only
 npm run dev
 ```
 
