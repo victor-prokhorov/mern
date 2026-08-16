@@ -12,7 +12,10 @@ creates a movie, every follower of every cast member gets a
 ## How it works here
 
 `Follow` (`server/src/models/follow.js`) is `{ user, actor, createdAt }`
-with a unique index on `{ user, actor }`. `Notification`
+with a unique index on `{ user, actor }` plus a secondary index on
+`{ actor: 1 }` — the unique index is user-prefixed, so it cannot serve
+the fan-out's by-actor lookup below, and without the secondary index
+every movie creation would collection-scan the follows. `Notification`
 (`server/src/models/notification.js`) is
 `{ user, type: 'actor_in_new_movie', actor, movie, readAt, createdAt }`
 with a unique index on `{ user, movie, actor }` — one row per
@@ -25,7 +28,8 @@ The fan-out itself is one function,
 `fanoutNewMovie(movie)` in `server/src/notifications/fanout.js:4-16`:
 it collects every distinct actor id in the movie's cast, does **one**
 query for every `Follow` row referencing any of them
-(`fanout.js:7`, via `followsRepo.findByActors`), and if there are any,
+(`fanout.js:7`, via `followsRepo.findByActors`, served by the
+`{ actor: 1 }` index), and if there are any,
 builds one document per (follower, actor) pair and writes them with a
 **single** `insertMany(docs, { ordered: false })`
 (`server/src/repositories/notifications.js:10`). There is no
@@ -53,7 +57,13 @@ then `createdAt` descending as the tiebreak. This is load-bearing but
 implicit: the ordering is a property of BSON type comparison, not
 something the query states, and MongoDB treats a missing field as null
 for sort purposes too, so the behaviour would survive `readAt` being
-absent rather than explicitly `null`.
+absent rather than explicitly `null`. The query is served by the
+`{ user: 1, readAt: 1, createdAt: -1 }` index, which matches the filter
+and returns rows already in sort order. The unique
+`{ user, movie, actor }` index alone could find a user's rows (its
+prefix is `user`) but says nothing about their order, so before this
+index existed every read finished with an in-memory sort over the
+user's entire notification history.
 
 ## The core concepts
 
@@ -64,9 +74,10 @@ fan-out-on-read, would store nothing at write time and instead, when a
 user opens their notifications, compute on the fly which movies were
 added recently that feature an actor they follow. Fan-out-on-write
 trades storage (one row per follower per event, potentially a lot of
-rows) for read speed (`GET /api/notifications` is a single indexed
-query, `server/src/repositories/notifications.js:17-19`, no
-computation). Fan-out-on-read trades that storage back for slower,
+rows) for read speed (`GET /api/notifications` is a single query
+covered by the `{ user, readAt, createdAt }` index,
+`server/src/repositories/notifications.js:17-19`, no
+computation and no in-memory sort). Fan-out-on-read trades that storage back for slower,
 heavier reads, because every read has to reconstruct what "new for
 this user" means from scratch.
 

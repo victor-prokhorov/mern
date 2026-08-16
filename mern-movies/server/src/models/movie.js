@@ -8,4 +8,7 @@ const movieSchema = new mongoose.Schema({
   releasedAt: { type: Date, required: true }
 })
 
+movieSchema.index({ genres: 1 })
+movieSchema.index({ averageRating: 1 })
+
 export default mongoose.model('Movie', movieSchema)

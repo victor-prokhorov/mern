@@ -115,6 +115,23 @@ index does not exist yet and duplicates can be written. Awaiting
 `Model.init()` before accepting traffic is the documented fix, and this
 app does not do it.
 
+**The read paths carry secondary indexes of their own**, added after an
+audit found every one of them collection-scanning. `Movie` declares
+`{ genres: 1 }` — a multikey index over the string array — for
+`GET /api/movies?genre=`, and `{ averageRating: 1 }` for the
+recommender's `averageRating >= 7` eligibility floor
+(`server/src/repositories/movies.js`, `findEligible`). Elsewhere,
+`Follow` declares `{ actor: 1 }` for the fan-out's by-actor lookup and
+`Notification` declares `{ user: 1, readAt: 1, createdAt: -1 }` for the
+notification list — see `../notifications/README.md`. Be precise about
+what the `averageRating` index buys: the `$gte` becomes an index range
+scan, but `findEligible` also excludes the caller's history with an
+`_id $nin`, which still has to be checked against every document the
+range matches — that exclusion list is the real scaling wall, named in
+`../recommendations/README.md`. The startup caveat above applies to all
+of these too: schema-declared indexes are built asynchronously, and
+until a build finishes the queries run, just unindexed.
+
 ## The core concepts
 
 **A rating is explicit feedback, a watch is implicit feedback.** When
