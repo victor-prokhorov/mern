@@ -68,27 +68,35 @@ export async function claimJobs(client, { workerId, kinds = null, limit = 1, lea
   return rows
 }
 
-export async function reapExpired(client, { limit = 100 } = {}) {
+export async function selectExpired(client, { limit = 100 } = {}) {
+  const { rows } = await client.query(
+    `SELECT id, kind, payload, attempts, max_attempts
+     FROM jobs
+     WHERE status = 'running' AND lease_expires_at < now()
+     ORDER BY id
+     FOR UPDATE SKIP LOCKED
+     LIMIT $1`,
+    [limit]
+  )
+  return rows
+}
+
+export async function reapJob(client, { jobId, dead, delayMs }) {
   const { rows } = await client.query(
     `UPDATE jobs
-     SET status = CASE WHEN attempts + 1 >= max_attempts THEN 'dead' ELSE 'ready' END,
+     SET status = CASE WHEN $2 THEN 'dead' ELSE 'ready' END,
          attempts = attempts + 1,
+         run_at = CASE WHEN $2 THEN run_at ELSE now() + ($3 * interval '1 millisecond') END,
          last_error = CASE WHEN last_error IS NULL THEN 'lease expired' ELSE last_error || '; lease expired' END,
          locked_by = NULL,
          locked_at = NULL,
          lease_expires_at = NULL,
          updated_at = now()
-     WHERE id IN (
-       SELECT id FROM jobs
-       WHERE status = 'running' AND lease_expires_at < now()
-       ORDER BY id
-       FOR UPDATE SKIP LOCKED
-       LIMIT $1
-     )
+     WHERE id = $1
      RETURNING id, kind, payload, status, attempts, max_attempts`,
-    [limit]
+    [jobId, dead, delayMs]
   )
-  return rows
+  return rows[0]
 }
 
 export async function heartbeat(client, { jobId, workerId, lockedAt, leaseMs }) {

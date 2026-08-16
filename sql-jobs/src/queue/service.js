@@ -1,4 +1,5 @@
 import * as jobsRepo from '../repositories/jobs.js'
+import { withTransaction } from '../db.js'
 import { getDeadHandler } from './handlers.js'
 import { backoffMs } from './backoff.js'
 
@@ -10,8 +11,18 @@ export async function claimJobs(pool, { workerId, kinds = null, limit = 1, lease
   return jobsRepo.claimJobs(pool, { workerId, kinds, limit, leaseMs, perAccountLimit })
 }
 
-export async function reapExpired(pool, options) {
-  const reaped = await jobsRepo.reapExpired(pool, options)
+export async function reapExpired(pool, options = {}) {
+  const { limit, random } = options
+  const reaped = await withTransaction(async (client) => {
+    const expired = await jobsRepo.selectExpired(client, { limit })
+    const rows = []
+    for (const job of expired) {
+      const dead = job.attempts + 1 >= job.max_attempts
+      const delayMs = dead ? 0 : backoffMs(job.attempts, { random })
+      rows.push(await jobsRepo.reapJob(client, { jobId: job.id, dead, delayMs }))
+    }
+    return rows
+  })
   for (const job of reaped) {
     if (job.status !== 'dead') continue
     const onDead = getDeadHandler(job.kind)

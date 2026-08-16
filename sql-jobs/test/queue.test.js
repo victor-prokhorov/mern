@@ -66,7 +66,7 @@ describe('queue', () => {
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
       const staleCompleteOk = await jobsRepo.completeJob(pool, {
         jobId: staleClaim.id,
@@ -86,7 +86,7 @@ describe('queue', () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
-      await jobsRepo.reapExpired(pool)
+      await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
       const ok = await jobsRepo.completeJob(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: reclaimed.locked_at })
@@ -105,7 +105,7 @@ describe('queue', () => {
       await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(reaped.map((r) => r.id)).to.deep.equal([job.id])
       const current = await jobsRepo.findById(pool, job.id)
@@ -133,12 +133,12 @@ describe('queue', () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
-      await jobsRepo.reapExpired(pool)
+      await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
 
       const extended = await jobsRepo.heartbeat(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: staleClaim.locked_at, leaseMs: 5000 })
       await sleep(60)
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(extended).to.equal(null)
       expect(reaped.map((r) => r.id)).to.deep.equal([reclaimed.id])
@@ -151,7 +151,7 @@ describe('queue', () => {
       await sleep(15)
       await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', lockedAt: claimed.locked_at, leaseMs: 5000 })
       await sleep(30)
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(reaped).to.deep.equal([])
       const current = await jobsRepo.findById(pool, claimed.id)
