@@ -13,8 +13,8 @@ export async function reapExpired(pool, options) {
   return jobsRepo.reapExpired(pool, options)
 }
 
-export async function heartbeat(pool, { jobId, workerId, leaseMs = 10000 }) {
-  const row = await jobsRepo.heartbeat(pool, { jobId, workerId, leaseMs })
+export async function heartbeat(pool, { jobId, workerId, lockedAt, leaseMs = 10000 }) {
+  const row = await jobsRepo.heartbeat(pool, { jobId, workerId, lockedAt, leaseMs })
   return row !== null
 }
 

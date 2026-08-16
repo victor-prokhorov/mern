@@ -135,7 +135,7 @@ describe('queue', () => {
       const [claimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
 
       await sleep(15)
-      await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', leaseMs: 5000 })
+      await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', lockedAt: claimed.locked_at, leaseMs: 5000 })
       await sleep(30)
       const reaped = await jobsRepo.reapExpired(pool)
 
