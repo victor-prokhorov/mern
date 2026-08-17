@@ -21,5 +21,6 @@ export class ConflictError extends Error {
 
 export function errorHandler(err, req, res, next) {
   if (err.status) return res.status(err.status).json({ error: err.message })
+  console.error('unhandled error', err)
   res.status(500).json({ error: 'internal server error' })
 }
