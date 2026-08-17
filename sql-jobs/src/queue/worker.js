@@ -19,21 +19,45 @@ export function createWorker({
   let timer = null
   let stopping = false
   let ticking = false
+  let leaseLosses = 0
   const inFlight = new Map()
 
+  function recordLeaseLoss(claim, job) {
+    if (claim.leaseLost) return
+    claim.leaseLost = true
+    leaseLosses += 1
+    onError(new Error(`lease lost for job ${job.id}`), job)
+  }
+
   async function runJob(job) {
-    const claim = { workerId, lockedAt: job.locked_at }
+    const claim = { workerId, lockedAt: job.locked_at, leaseLost: false, finished: false }
     inFlight.set(job.id, claim)
     const hbTimer = setInterval(() => {
-      jobsRepo.heartbeat(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, leaseMs }).catch((err) => onError(err, job))
+      jobsRepo.heartbeat(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, leaseMs })
+        .then((row) => {
+          if (row || claim.finished || claim.leaseLost) return
+          clearInterval(hbTimer)
+          recordLeaseLoss(claim, job)
+        })
+        .catch((err) => onError(err, job))
     }, Math.max(50, Math.floor(leaseMs / 3)))
     try {
       const handler = getHandler(job.kind)
       if (!handler) throw new Error(`no handler registered for kind "${job.kind}"`)
       await handler(job)
-      await completeJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at })
+      clearInterval(hbTimer)
+      if (!claim.leaseLost) {
+        const completed = await completeJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at })
+        claim.finished = true
+        if (!completed) recordLeaseLoss(claim, job)
+      }
     } catch (err) {
-      await failJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, error: err })
+      clearInterval(hbTimer)
+      if (!claim.leaseLost) {
+        const failed = await failJob(pool, { jobId: job.id, workerId, lockedAt: job.locked_at, error: err })
+        claim.finished = true
+        if (!failed) recordLeaseLoss(claim, job)
+      }
       onError(err, job)
     } finally {
       clearInterval(hbTimer)
@@ -74,5 +98,5 @@ export function createWorker({
     }
   }
 
-  return { start, stop, tick, inFlightCount: () => inFlight.size }
+  return { start, stop, tick, inFlightCount: () => inFlight.size, leaseLostCount: () => leaseLosses }
 }
