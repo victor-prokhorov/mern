@@ -198,7 +198,7 @@ spot rather than a thing that doesn't matter.
 - Contract tests, property-based testing — concept only / not built
 
 ### Domain and architecture
-- Layered architecture, dependency direction `[covered]` (test-enforced in sql-jobs and sql-ledger via `check-layers.js`; manual `lint:layers` in sql-scheduler; convention only in the MERN apps)
+- Layered architecture, dependency direction `[covered]` (test-enforced in all nine apps via `check-layers.js` — the SQL apps grep for SQL outside `repositories/`, the MERN apps for model imports outside `repositories/`, all for `req`/`res` below controllers)
 - Domain-driven design: bounded contexts, aggregates as consistency boundaries, ubiquitous language, context mapping — partial (aggregate/embedding shapes in ([domain modelling](mern-movies/server/src/movies/README.md)); DDD proper not built)
 - State machines vs scattered conditionals `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md))
 - Rules engines vs ML, explainable decisions `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
