@@ -379,6 +379,27 @@ describe('queue', () => {
     })
   })
 
+  describe('lease loss', () => {
+    it('a worker whose job is reaped and reclaimed mid-handler records the lease loss and leaves the new owners claim untouched', async () => {
+      registerHandler('slow', () => sleep(250))
+      const job = await jobsRepo.enqueue(pool, { kind: 'slow', payload: {} })
+      const worker = createWorker({ pool, workerId: 'w', concurrency: 1, pollMs: 5000, leaseMs: 30 })
+      await worker.tick()
+      await sleep(35)
+      await queue.reapExpired(pool, { random: () => 0 })
+      const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'other', limit: 1, leaseMs: 5000 })
+
+      await sleep(300)
+
+      await worker.stop({ timeoutMs: 50 })
+      expect(reclaimed.id).to.equal(job.id)
+      expect(worker.leaseLostCount()).to.equal(1)
+      const current = await jobsRepo.findById(pool, job.id)
+      expect(current.status).to.equal('running')
+      expect(current.locked_by).to.equal('other')
+    })
+  })
+
   describe('graceful shutdown', () => {
     it('releases the lease of an in-flight job rather than leaving it locked until the reaper', async () => {
       registerHandler('slow', () => sleep(200))
