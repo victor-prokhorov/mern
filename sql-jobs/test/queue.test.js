@@ -66,7 +66,7 @@ describe('queue', () => {
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
       const staleCompleteOk = await jobsRepo.completeJob(pool, {
         jobId: staleClaim.id,
@@ -86,7 +86,7 @@ describe('queue', () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
-      await jobsRepo.reapExpired(pool)
+      await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
       const ok = await jobsRepo.completeJob(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: reclaimed.locked_at })
@@ -101,16 +101,45 @@ describe('queue', () => {
     it('preserves a real prior last_error instead of discarding it for "lease expired"', async () => {
       const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 5 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
-      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'upstream responded 500', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, error: 'upstream responded 500', random: () => 0 })
       await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
 
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(reaped.map((r) => r.id)).to.deep.equal([job.id])
       const current = await jobsRepo.findById(pool, job.id)
       expect(current.last_error).to.include('upstream responded 500')
       expect(current.last_error).to.include('lease expired')
+    })
+
+    it('reschedules a reaped job with the same full-jitter backoff as a normal failure instead of making it instantly re-claimable', async () => {
+      const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool, { random: () => 1 })
+      const claimed = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
+
+      expect(reaped.map((r) => r.id)).to.deep.equal([job.id])
+      expect(claimed).to.deep.equal([])
+      const { rows } = await pool.query('SELECT run_at > now() AS deferred FROM jobs WHERE id = $1', [job.id])
+      expect(rows[0].deferred).to.equal(true)
+    })
+
+    it('one throwing onDead callback does not prevent the other dead jobs callbacks from running', async () => {
+      const calls = []
+      registerHandler('kind_a', () => {}, { onDead: () => { calls.push('a'); throw new Error('onDead a failed') } })
+      registerHandler('kind_b', () => {}, { onDead: () => { calls.push('b') } })
+      await jobsRepo.enqueue(pool, { kind: 'kind_a', payload: {}, maxAttempts: 1 })
+      await jobsRepo.enqueue(pool, { kind: 'kind_b', payload: {}, maxAttempts: 1 })
+      await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 2, leaseMs: 1 })
+      await sleep(20)
+
+      const reaped = await queue.reapExpired(pool)
+
+      expect(reaped.map((r) => r.status)).to.deep.equal(['dead', 'dead'])
+      expect(calls).to.deep.equal(['a', 'b'])
     })
   })
 
@@ -119,12 +148,12 @@ describe('queue', () => {
       await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [staleClaim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 1 })
       await sleep(20)
-      await jobsRepo.reapExpired(pool)
+      await queue.reapExpired(pool, { random: () => 0 })
       const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 30 })
 
       const extended = await jobsRepo.heartbeat(pool, { jobId: reclaimed.id, workerId: 'w', lockedAt: staleClaim.locked_at, leaseMs: 5000 })
       await sleep(60)
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(extended).to.equal(null)
       expect(reaped.map((r) => r.id)).to.deep.equal([reclaimed.id])
@@ -137,7 +166,7 @@ describe('queue', () => {
       await sleep(15)
       await jobsRepo.heartbeat(pool, { jobId: claimed.id, workerId: 'w', lockedAt: claimed.locked_at, leaseMs: 5000 })
       await sleep(30)
-      const reaped = await jobsRepo.reapExpired(pool)
+      const reaped = await queue.reapExpired(pool)
 
       expect(reaped).to.deep.equal([])
       const current = await jobsRepo.findById(pool, claimed.id)
@@ -163,16 +192,29 @@ describe('queue', () => {
     it('a job exceeding max_attempts goes dead, and a later healthy job still runs', async () => {
       const doomed = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 2 })
       const [claim1] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
-      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, attempts: claim1.attempts, maxAttempts: claim1.max_attempts, error: 'boom', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim1.id, workerId: 'w', lockedAt: claim1.locked_at, error: 'boom', random: () => 0 })
       const [claim2] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
-      await queue.failJob(pool, { jobId: claim2.id, workerId: 'w', lockedAt: claim2.locked_at, attempts: claim2.attempts, maxAttempts: claim2.max_attempts, error: 'boom again', random: () => 0 })
+      await queue.failJob(pool, { jobId: claim2.id, workerId: 'w', lockedAt: claim2.locked_at, error: 'boom again', random: () => 0 })
       const healthy = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {} })
       const [claim3] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
 
       const doomedRow = await jobsRepo.findById(pool, doomed.id)
       expect(doomedRow.status).to.equal('dead')
       expect(claim3.id).to.equal(healthy.id)
+    })
+
+    it('decides dead-lettering from the current attempts in the database, not the stale claim-time value', async () => {
+      const job = await jobsRepo.enqueue(pool, { kind: 'noop', payload: {}, maxAttempts: 2 })
+      const [claim] = await jobsRepo.claimJobs(pool, { workerId: 'w', limit: 1, leaseMs: 5000 })
+      await pool.query('UPDATE jobs SET attempts = attempts + 1 WHERE id = $1', [job.id])
+
+      const failed = await queue.failJob(pool, { jobId: claim.id, workerId: 'w', lockedAt: claim.locked_at, error: 'boom', random: () => 0 })
+
+      expect(failed).to.equal(true)
+      const current = await jobsRepo.findById(pool, job.id)
+      expect(current.status).to.equal('dead')
+      expect(current.attempts).to.equal(2)
     })
   })
 
@@ -337,6 +379,27 @@ describe('queue', () => {
     })
   })
 
+  describe('lease loss', () => {
+    it('a worker whose job is reaped and reclaimed mid-handler records the lease loss and leaves the new owners claim untouched', async () => {
+      registerHandler('slow', () => sleep(250))
+      const job = await jobsRepo.enqueue(pool, { kind: 'slow', payload: {} })
+      const worker = createWorker({ pool, workerId: 'w', concurrency: 1, pollMs: 5000, leaseMs: 30 })
+      await worker.tick()
+      await sleep(35)
+      await queue.reapExpired(pool, { random: () => 0 })
+      const [reclaimed] = await jobsRepo.claimJobs(pool, { workerId: 'other', limit: 1, leaseMs: 5000 })
+
+      await sleep(300)
+
+      await worker.stop({ timeoutMs: 50 })
+      expect(reclaimed.id).to.equal(job.id)
+      expect(worker.leaseLostCount()).to.equal(1)
+      const current = await jobsRepo.findById(pool, job.id)
+      expect(current.status).to.equal('running')
+      expect(current.locked_by).to.equal('other')
+    })
+  })
+
   describe('graceful shutdown', () => {
     it('releases the lease of an in-flight job rather than leaving it locked until the reaper', async () => {
       registerHandler('slow', () => sleep(200))
@@ -350,6 +413,18 @@ describe('queue', () => {
       const current = await jobsRepo.findById(pool, job.id)
       expect(current.status).to.equal('ready')
       expect(current.locked_by).to.equal(null)
+    })
+
+    it('calling start twice does not leak a second polling interval', async () => {
+      const worker = createWorker({ pool, workerId: 'w', concurrency: 1, pollMs: 5000, leaseMs: 5000 })
+      const timeoutsBefore = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+
+      worker.start()
+      worker.start()
+
+      const timeoutsAfter = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+      await worker.stop({ timeoutMs: 50 })
+      expect(timeoutsAfter - timeoutsBefore).to.equal(1)
     })
   })
 })
