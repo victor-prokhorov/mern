@@ -2,11 +2,14 @@
 
 Three things, in order: (1) the master concept checklist — the full list of
 what a senior/staff backend engineer and architect should master, grouped by
-area, each marked `[covered]` with a link, `[roadmap]` if planned here, or
-unmarked if it is a real gap not in this repo yet; (2) the index of the 29
-guides that exist, as a concept dictionary; (3) the roadmap of unbuilt topics
-in priority order. Scan section 1 to pick a weakness; jump to section 2 for
-anything already built.
+area, each line marked by how much of it actually exists here: `[covered]`
+means implemented, tested, and taught here, with a link; `[explained]` means
+a guide teaches it as prose but nothing in the repo implements it;
+`[mentioned]` means it is only named in a neighbouring guide's aside;
+`[roadmap]` means planned here; unmarked means a real gap not in this repo
+yet; (2) the index of the 29 guides that exist, as a concept dictionary;
+(3) the roadmap of unbuilt topics in priority order. Scan section 1 to pick
+a weakness; jump to section 2 for anything already built.
 
 ## Master concept checklist — what to master
 
@@ -15,7 +18,7 @@ the parts this repo happens to teach, so an unmarked line is a known blind
 spot rather than a thing that doesn't matter.
 
 ### Data storage and modelling
-- Relational vs document vs key-value vs wide-column vs graph — picking by workload `[covered]` ([ledger](sql-ledger/src/ledger/README.md), [domain modelling](mern-movies/server/src/movies/README.md))
+- Relational vs document vs key-value vs wide-column vs graph — picking by workload — relational vs document vs key-value `[covered]` ([ledger](sql-ledger/src/ledger/README.md), [domain modelling](mern-movies/server/src/movies/README.md)); wide-column and graph appear nowhere in the repo
 - Normalization vs denormalization, embedding vs referencing `[covered]` ([domain modelling](mern-movies/server/src/movies/README.md))
 - Money and exact numerics (minor units, BIGINT not float, ISO 4217) `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
 - Indexes: composite, covering, partial, unique; index selection and `EXPLAIN` `[roadmap]` (should-have #8) — partial today via ([pagination](sql-ledger/src/pagination/README.md))
@@ -26,17 +29,23 @@ spot rather than a thing that doesn't matter.
 - Blob/object storage, presigned uploads, lifecycle `[roadmap]` (nice-to-have #20)
 - Backups, point-in-time recovery (PITR/WAL archiving), restore testing `[roadmap]` (should-have #13)
 - Partitioning and sharding (by range, hash, tenant) — not built
-- Data retention, archival, TTL/reaping `[covered]` (idempotency/rate-limit TTL, outbox growth notes)
+- Data retention, archival, TTL/reaping — TTL expiry `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [rate limiting](mern-shop/server/src/rateLimit/README.md)); archival of grown tables is a documented skip ([outbox](sql-ledger/src/outbox/README.md) never prunes published rows), not coverage
+
+### Data and analytics plane
+- OLTP vs OLAP — why the transactional schema is not the reporting schema — not built
+- Columnar warehouses (BigQuery, Redshift, Snowflake) — not built
+- ETL vs ELT, batch vs streaming ingestion — not built
+- Data quality, lineage, contracts between producers and the warehouse — not built
 
 ### Consistency, transactions, concurrency
 - ACID, isolation levels (READ COMMITTED, REPEATABLE READ, SERIALIZABLE) `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
 - Lost update vs write skew vs phantoms `[covered]` ([ledger](sql-ledger/src/ledger/README.md))
 - Optimistic vs pessimistic locking, compare-and-swap, ETag/If-Match `[covered]` ([concurrency](mern-tickets/server/src/concurrency/README.md))
-- TOCTOU (time-of-check-to-time-of-use) / check-then-act races — the name for the bug behind lost updates and check-then-insert `[covered]` (demonstrated, not labelled: ([idempotency](mern-shop/server/src/idempotency/README.md)) check-then-act, ([ledger](sql-ledger/src/ledger/README.md)) lost update)
+- TOCTOU (time-of-check-to-time-of-use) / check-then-act races — the name for the bug behind lost updates and check-then-insert — the races themselves are demonstrated and fixed ([idempotency](mern-shop/server/src/idempotency/README.md) check-then-act, [ledger](sql-ledger/src/ledger/README.md) lost update), but the term is never taught anywhere in the repo
 - Row locking, `FOR UPDATE`, `SKIP LOCKED`, advisory locks `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [migrations](sql-ledger/src/migrations/README.md))
 - Fencing tokens, leases, and why a lease alone is not enough `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [queue](sql-jobs/src/queue/README.md))
 - CAP / PACELC, replication lag, read-your-writes, monotonic reads `[covered]` ([replication](sql-replica/src/replication/README.md))
-- CRDTs and convergent merge (the step past whole-document rejection) `[covered]` (concept only, ([concurrency](mern-tickets/server/src/concurrency/README.md)))
+- CRDTs and convergent merge (the step past whole-document rejection) `[mentioned]` (a couple of sentences and a further-reading link in ([concurrency](mern-tickets/server/src/concurrency/README.md)))
 - Distributed transactions, two-phase commit, and why they are avoided `[covered]` ([sagas](sql-saga/src/saga/README.md))
 - Sagas and compensation (orchestration vs choreography) `[covered]` ([sagas](sql-saga/src/saga/README.md))
 - Idempotency: client keys, natural keys, unique-index dedupe `[covered]` ([idempotency](mern-shop/server/src/idempotency/README.md), [ledger](sql-ledger/src/ledger/README.md), [fan-out](mern-movies/server/src/notifications/README.md))
@@ -46,19 +55,26 @@ spot rather than a thing that doesn't matter.
 - Transactional outbox, polling relay vs CDC, inbox pattern `[covered]` ([outbox](sql-ledger/src/outbox/README.md))
 - Delivery semantics: at-least-once, at-most-once, effectively-once `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [fan-out](mern-movies/server/src/notifications/README.md), [queue](sql-jobs/src/queue/README.md))
 - Fan-out on write vs on read, the celebrity problem `[covered]` ([fan-out](mern-movies/server/src/notifications/README.md))
-- Ordering guarantees, partitions, consumer groups — concept only (queue README)
+- Ordering guarantees, partitions, consumer groups `[mentioned]` (an aside in the [queue](sql-jobs/src/queue/README.md) README)
 - Event schema evolution, upcasting, schema registry `[roadmap]` (should-have #9)
 - Scheduling: cron vs polling ticks, catch-up, drift, exactly-once fire `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md), [cadence](sql-scheduler/src/cadence/README.md))
-- Backpressure vs load shedding `[covered]` (concept, ([throttle](mern-tickets/server/src/throttle/README.md)))
+- Backpressure vs load shedding `[explained]` (prose in ([throttle](mern-tickets/server/src/throttle/README.md)); neither is implemented)
+
+### Event streaming
+- Log vs queue semantics (replayable log vs destructive-read queue) — not built
+- Partitions and the scope of ordering guarantees; consumer groups, offsets, rebalancing — not built (named once in a queue README aside, see the `[mentioned]` line above)
+- Retention, compaction, replay — not built
+- Exactly-once semantics and Kafka transactions — not built
+- Stream processing: windowing, watermarks, late data — not built
 
 ### Caching and performance
-- Cache-aside, write-through, write-behind `[covered]` (cache-aside built; write-through/write-behind concept, ([caching](mern-cache/server/src/cache/README.md)))
-- Cache eviction policies: LRU, LFU, FIFO, ARC, TTL, and size/memory pressure `[covered]` (TTL reclaim only; LRU/LFU/ARC discussed as skipped, ([caching](mern-cache/server/src/cache/README.md)))
-- TTL vs invalidation, negative caching, stale-while-revalidate `[covered]` (TTL, invalidation, negative caching built; stale-while-revalidate concept, ([caching](mern-cache/server/src/cache/README.md)))
-- Cache stampede / thundering herd, single-flight, early expiry `[covered]` (single-flight built; probabilistic early expiry concept, ([caching](mern-cache/server/src/cache/README.md)))
-- HTTP caching: Cache-Control, ETag, 304, CDN edge `[covered]` (concept, in the caching guide's prose and its ETag contrast with ([concurrency](mern-tickets/server/src/concurrency/README.md)), ([caching](mern-cache/server/src/cache/README.md)))
+- Cache-aside, write-through, write-behind — cache-aside `[covered]`; write-through/write-behind `[explained]` in the same guide ([caching](mern-cache/server/src/cache/README.md))
+- Cache eviction policies: LRU, LFU, FIFO, ARC, TTL, and size/memory pressure — TTL reclaim `[covered]`; LRU/LFU/ARC `[explained]` only as documented skips ([caching](mern-cache/server/src/cache/README.md))
+- TTL vs invalidation, negative caching, stale-while-revalidate — TTL, invalidation, negative caching `[covered]`; stale-while-revalidate `[explained]` ([caching](mern-cache/server/src/cache/README.md))
+- Cache stampede / thundering herd, single-flight, early expiry — single-flight `[covered]`; probabilistic early expiry `[explained]` ([caching](mern-cache/server/src/cache/README.md))
+- HTTP caching: Cache-Control, ETag, 304, CDN edge `[explained]` (the caching guide's prose and its ETag contrast with ([concurrency](mern-tickets/server/src/concurrency/README.md)); nothing implemented, ([caching](mern-cache/server/src/cache/README.md)))
 - N+1 queries and dataloaders/batching `[roadmap]` (nice-to-have #17)
-- Connection pooling, prepared statements — concept only
+- Connection pooling, prepared statements `[mentioned]` (pooler asides in the [ledger](sql-ledger/src/ledger/README.md) and [replication](sql-replica/src/replication/README.md) guides)
 - Query plans and index-driven performance `[roadmap]` (should-have #8)
 
 ### API design
@@ -67,40 +83,48 @@ spot rather than a thing that doesn't matter.
 - Pagination contracts, opaque tokens (AIP-158) `[covered]` ([pagination](sql-ledger/src/pagination/README.md))
 - Rate-limit response contract (Retry-After, RateLimit headers) `[covered]` ([rate limiting](mern-shop/server/src/rateLimit/README.md), [throttle](mern-tickets/server/src/throttle/README.md))
 - Real-time: SSE, WebSockets, long polling `[roadmap]` (should-have #6)
-- GraphQL vs REST, query cost — concept only (throttle mentions Shopify cost model)
+- GraphQL vs REST, query cost `[mentioned]` ([throttle](mern-tickets/server/src/throttle/README.md) names Shopify's cost model in an aside)
 
 ### Authentication, authorization, security
 - Password storage (bcrypt/Argon2), NIST rules, reset flows `[covered]` ([password reset](mern-shop/server/src/passwordReset/README.md))
 - Sessions vs JWT, rotation, reuse detection, revocation, `kid` `[covered]` ([sessions](mern-shop/server/src/session/README.md))
-- OAuth2 / OIDC scope and grants `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)))
+- OAuth2 / OIDC scope and grants `[explained]` (one prose passage in ([sessions](mern-shop/server/src/session/README.md)), which itself says: no client registration, no scopes, no consent, no OIDC layer built)
 - Authorization models: RBAC, ABAC, ReBAC, PDP/PEP `[covered]` ([policy](mern-tickets/server/src/policy/README.md))
 - Rate limiting and credential-stuffing defence `[covered]` ([rate limiting](mern-shop/server/src/rateLimit/README.md))
 - Blocklists, normalization, homoglyphs, enumeration oracles `[covered]` ([blocklist](mern-shop/server/src/blocklist/README.md))
 - Injection: SQL/NoSQL, XSS, CSRF, SSRF, prototype pollution `[roadmap]` (must-have #5)
 - Fraud scoring, reason codes, explainability, GDPR Art. 22 `[covered]` ([fraud](mern-shop/server/src/fraud/README.md))
 - Content moderation, keyword/allowlist, Unicode security `[covered]` ([moderation](mern-tickets/server/src/moderation/README.md))
-- Secrets management, key rotation `[covered]` (concept, ([sessions](mern-shop/server/src/session/README.md)) + AWS/GCP sections)
+- Secrets management, key rotation `[mentioned]` (a `kid`-rotation bullet and a KMS/Secret Manager line in ([sessions](mern-shop/server/src/session/README.md)); what's implemented is one static `JWT_SECRET`)
 - Multi-tenancy isolation `[roadmap]` (nice-to-have #19)
-- Audit logs vs event sourcing, tamper-evidence `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md), [ledger](sql-ledger/src/ledger/README.md))
+- Audit logs vs event sourcing, tamper-evidence — audit log vs event sourcing `[covered]` ([tickets](mern-tickets/server/src/tickets/README.md), [ledger](sql-ledger/src/ledger/README.md)); tamper-evidence (hash chains, write-once storage) is a documented skip, not built
+
+### Security beyond app-auth
+- Threat modeling (STRIDE-style, abuse cases) — not built
+- Supply chain: SBOM, lockfile integrity, dependency provenance — not built (the closed dependency list is a house rule, not a treatment)
+- Cryptography in practice: KMS, envelope encryption, at-rest vs in-transit — not built
+- Service-to-service authn: mTLS, workload identity, signed webhooks — not built
+- Browser security surface: CSP, CORS, SameSite `[mentioned]` (SameSite and CSRF in the ([sessions](mern-shop/server/src/session/README.md)) cookie tradeoff; CSP and CORS policy nowhere)
+- Privacy engineering: PII inventory, deletion / right-to-be-forgotten pipelines — not built
 
 ### Reliability and resilience
 - Timeouts (why every remote call needs one) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
 - Retries, exponential backoff, full jitter `[covered]` ([outbox](sql-ledger/src/outbox/README.md), [queue](sql-jobs/src/queue/README.md), [alerting](sql-scheduler/src/alerting/README.md))
 - Circuit breakers (closed/open/half-open) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
-- Bulkheads, load shedding, hedged requests `[covered]` (concept, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)))
+- Bulkheads, load shedding, hedged requests `[mentioned]` (one definition each in a ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) bullet; the guide's own skip list says none exist in the codebase)
 - Graceful shutdown, connection draining `[covered]` ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md))
 - Fail-open vs fail-closed per domain `[covered]` ([hooks](mern-tickets/server/src/hooks/README.md))
-- Cascading failure, thundering herd on recovery `[covered]` (concept across breaker/backoff guides)
+- Cascading failure, thundering herd on recovery `[explained]` (prose across the breaker/backoff guides)
 - Dependability taxonomy: fault vs error vs failure (Avizienis), MTBF/MTTR, blast radius — the vocabulary — not built
-- Fault tolerance vs fault avoidance, redundancy, graceful degradation `[covered]` (concept, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) fallbacks)
+- Fault tolerance vs fault avoidance, redundancy, graceful degradation `[explained]` (prose, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) fallbacks)
 
 ### Observability and operations
 - Structured logging, correlation ids, AsyncLocalStorage `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
 - Metrics: RED vs USE, cardinality, Prometheus exposition `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
-- Distributed tracing, spans, OpenTelemetry `[covered]` (concept, ([observability](mern-tickets/server/src/observability/README.md)))
+- Distributed tracing, spans, OpenTelemetry `[explained]` (prose, ([observability](mern-tickets/server/src/observability/README.md)); no tracer in the code)
 - Health checks: liveness vs readiness `[covered]` ([observability](mern-tickets/server/src/observability/README.md))
 - Alerting: dedup, hysteresis, cooldown, liveness vs lag rules `[covered]` ([alerting](sql-scheduler/src/alerting/README.md))
-- Latency as a distribution: p50/p95/p99/p999, tail latency, why averages lie `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) slow-is-worse-than-failed, ([observability](mern-tickets/server/src/observability/README.md)) duration histogram) — no dedicated treatment
+- Latency as a distribution: p50/p95/p99/p999, tail latency, why averages lie `[explained]` (([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) slow-is-worse-than-failed, ([observability](mern-tickets/server/src/observability/README.md)) duration histogram) — no dedicated treatment
 - Availability, SLIs/SLOs/error budgets, the nines — not built (mechanics exist; the discipline does not)
 - Profiling: CPU/heap profiles, flamegraphs, event-loop lag `[roadmap]` (should-have #15)
 - Load testing, latency-under-load curves, finding the knee `[roadmap]` (should-have #15)
@@ -111,22 +135,22 @@ spot rather than a thing that doesn't matter.
 - Binary serialization: Protobuf, Avro, Thrift, MessagePack vs JSON — size, speed, and schema `[roadmap]` (should-have #10) — nothing in the repo covers this yet
 - Schema/IDL evolution: field numbers, forward/backward compatibility, schema registry `[roadmap]` (should-have #9, event side) — RPC/IDL side not built
 - Service discovery, client-side vs server-side load balancing — not built
-- Service mesh (Envoy, Istio), sidecars, outlier detection `[covered]` (concept only, ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) contrasts app-level breaker vs mesh)
-- API gateway, backend-for-frontend (BFF), edge aggregation `[covered]` (concept only, across AWS/GCP sections)
+- Service mesh (Envoy, Istio), sidecars, outlier detection `[explained]` (([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md)) contrasts app-level breaker vs mesh in prose; no mesh anywhere)
+- API gateway, backend-for-frontend (BFF), edge aggregation `[mentioned]` (one-liners across the AWS/GCP sections)
 - Contract testing across service boundaries (Pact) `[roadmap]` (should-have #7)
 - OpenAPI / Swagger: spec-first vs code-first, codegen, request/response validation from the contract `[roadmap]` (should-have #11)
-- Distributed tracing across hops, context propagation `[covered]` (concept, ([observability](mern-tickets/server/src/observability/README.md)))
+- Distributed tracing across hops, context propagation `[explained]` (prose, ([observability](mern-tickets/server/src/observability/README.md)))
 - Monolith vs microservices vs modular monolith — the actual tradeoff — not built
 
 ### Containers, orchestration, platform
 - Containers and images: layering, multi-stage builds, minimal base images — not built
 - Kubernetes core objects: Pod, Deployment, ReplicaSet, Service, Ingress, ConfigMap, Secret `[roadmap]` (should-have #12)
-- Liveness/readiness/startup probes `[covered]` (the app side, ([observability](mern-tickets/server/src/observability/README.md))) — the K8s wiring itself not built
-- Rolling updates, `terminationGracePeriodSeconds`, graceful shutdown contract `[covered]` (app side, ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md)))
+- Liveness/readiness/startup probes `[explained]` (the app exposes tested `/healthz`/`/readyz` endpoints and ([observability](mern-tickets/server/src/observability/README.md)) teaches the semantics; the K8s wiring this line is about is not built)
+- Rolling updates, `terminationGracePeriodSeconds`, graceful shutdown contract `[explained]` (the app-side shutdown is built and taught, ([observability](mern-tickets/server/src/observability/README.md), [queue](sql-jobs/src/queue/README.md)); the platform side — rolling updates, grace periods — is prose only)
 - Horizontal Pod Autoscaler, resource requests/limits, QoS — not built
 - Config and secrets injection, 12-factor config — concept only (env-var config used repo-wide)
 - Service mesh at the platform layer (Istio/Linkerd) — see inter-service comms above
-- Serverless (Lambda, Cloud Run) as the alternative to orchestrating long-lived processes `[covered]` (concept, across the AWS/GCP sections)
+- Serverless (Lambda, Cloud Run) as the alternative to orchestrating long-lived processes `[mentioned]` (one-liners across the AWS/GCP sections)
 
 ### Networking fundamentals
 - OSI model and the TCP/IP layers (link, internet/IP, transport, application) — not built
@@ -149,7 +173,7 @@ spot rather than a thing that doesn't matter.
 - Cost engineering: per-request cost, egress, cardinality as a billing lever, cost as an architectural force `[roadmap]` (should-have #14)
 - Read replicas and replica routing `[covered]` ([replication](sql-replica/src/replication/README.md))
 - Sharding / partitioning strategies — not built
-- Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md))
+- Leader election, single-active-instance (advisory lock) `[covered]` ([scheduler](sql-scheduler/src/scheduler/README.md)) — lock-based single-active-instance only; real consensus-based election (Raft/Paxos) is not covered
 - Per-process vs shared state (breaker, health) `[covered]` ([circuit breaker](mern-tickets/server/src/circuitBreaker/README.md))
 - Consistent hashing — not built
 - Multi-region topology and geo-distribution — see the Regionalization group above
@@ -160,8 +184,15 @@ spot rather than a thing that doesn't matter.
 - Backwards-compatible deploys (old+new code together) `[covered]` ([migrations](sql-ledger/src/migrations/README.md))
 - Infrastructure as code, immutable infra — not built
 
+### Delivery platform
+- CI/CD pipelines, artifact promotion (build once, promote through environments) — not built (`test:ci` emits JUnit XML; nothing here consumes it)
+- Containers and images — see the Containers group above
+- Infrastructure as code, GitOps — not built
+- Deployment strategies: blue-green, canary, rollback `[roadmap]` (must-have #4) — see Deployment and release above
+- Feature flags, targeting, kill switches `[roadmap]` (must-have #4) — see Deployment and release above
+
 ### Testing and quality
-- Test doubles, dependency injection for testability `[covered]` (pattern throughout; injected clocks/stores)
+- Test doubles, dependency injection for testability — practiced throughout (injected clocks/stores) but no guide teaches it
 - Concurrency tests that force the real interleaving `[covered]` ([alerting](sql-scheduler/src/alerting/README.md), [scheduler](sql-scheduler/src/scheduler/README.md))
 - Mutation testing (coverage lies) `[covered]` ([mutation](tools/mutation/README.md))
 - Contract tests, property-based testing — concept only / not built
@@ -178,6 +209,20 @@ spot rather than a thing that doesn't matter.
 ### Engineering practice
 - Architecture decision records (ADRs), RFC/design-doc process `[roadmap]` (should-have #16)
 - Incident reviews / blameless postmortems, runbooks `[roadmap]` (should-have #16)
+
+### Org and staff practice
+- Design doc / RFC process, ADRs `[roadmap]` (should-have #16) — see Engineering practice above
+- Org-scale migrations and deprecations (the multi-team expand-contract) — not built
+- Build vs buy vs adopt, total cost of ownership — not built (individual guides argue it per topic in their AWS/GCP sections)
+- Incident command: roles, comms, severity levels — not built (incident reviews are `[roadmap]` should-have #16)
+- Technical strategy and sequencing — writing the "why now, why this order" — not built
+
+### ML/LLM-era backend
+- Vector search and ANN indexes (HNSW/IVF), embeddings as a data type — not built
+- RAG failure modes: retrieval quality, staleness, grounding — not built
+- Prompt and eval versioning: prompts as deployable, testable artifacts — not built
+- LLM cost/latency budgets: tokens as the new billing cardinality — not built
+- Prompt injection as a security class (untrusted input meets privileged tools) — not built
 
 ## Existing guides — the index
 
