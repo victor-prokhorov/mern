@@ -188,7 +188,7 @@ describe('transactional outbox', () => {
     expect(secondWin).to.equal(false)
   })
 
-  it('never delivers the same row twice: two genuinely overlapping claims never return overlapping rows', async () => {
+  it('SKIP LOCKED skips rows locked by a concurrent claimer: a claim overlapping an open claiming transaction returns only the unheld rows', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
     for (let i = 0; i < 6; i += 1) await makeTransfer(alice.id, bob.id, `ob-conc-${i}`)
