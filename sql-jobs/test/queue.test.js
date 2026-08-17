@@ -414,5 +414,17 @@ describe('queue', () => {
       expect(current.status).to.equal('ready')
       expect(current.locked_by).to.equal(null)
     })
+
+    it('calling start twice does not leak a second polling interval', async () => {
+      const worker = createWorker({ pool, workerId: 'w', concurrency: 1, pollMs: 5000, leaseMs: 5000 })
+      const timeoutsBefore = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+
+      worker.start()
+      worker.start()
+
+      const timeoutsAfter = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+      await worker.stop({ timeoutMs: 50 })
+      expect(timeoutsAfter - timeoutsBefore).to.equal(1)
+    })
   })
 })
