@@ -154,7 +154,41 @@ describe('transactional outbox', () => {
     await stopFakeUpstream(server)
   })
 
-  it('never delivers the same row twice: two genuinely overlapping claims never return overlapping rows', async () => {
+  it('counts every failure: two overlapping relays that both fail the same row leave attempts at 2', async () => {
+    const { server, url } = await startFakeUpstream((req, res) => {
+      setTimeout(() => {
+        res.writeHead(500)
+        res.end()
+      }, 300)
+    })
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const transfer = await makeTransfer(alice.id, bob.id, 'ob-lost-update')
+
+    const firstRelay = relayOnce({ pool, targetUrl: url, batchSize: 10, maxAttempts: 5 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const secondRelay = relayOnce({ pool, targetUrl: url, batchSize: 10, maxAttempts: 5 })
+    await Promise.all([firstRelay, secondRelay])
+
+    const rows = await outboxRepo.findByAggregate(pool, 'transfer', transfer.id)
+    expect(rows[0].attempts).to.equal(2)
+    await stopFakeUpstream(server)
+  })
+
+  it('markPublished wins only once: the first call reports the update, a late second call reports it lost', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const transfer = await makeTransfer(alice.id, bob.id, 'ob-mark-once')
+    const [row] = await outboxRepo.findByAggregate(pool, 'transfer', transfer.id)
+
+    const firstWin = await outboxRepo.markPublished(pool, row.id)
+    const secondWin = await outboxRepo.markPublished(pool, row.id)
+
+    expect(firstWin).to.equal(true)
+    expect(secondWin).to.equal(false)
+  })
+
+  it('SKIP LOCKED skips rows locked by a concurrent claimer: a claim overlapping an open claiming transaction returns only the unheld rows', async () => {
     const alice = await createAccount({ name: 'alice' })
     const bob = await createAccount({ name: 'bob' })
     for (let i = 0; i < 6; i += 1) await makeTransfer(alice.id, bob.id, `ob-conc-${i}`)

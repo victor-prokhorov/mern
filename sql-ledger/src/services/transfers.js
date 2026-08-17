@@ -35,8 +35,8 @@ export async function createTransfer({ reference, fromAccountId, toAccountId, am
       })
       await entriesRepo.create(client, { transferId: transfer.id, accountId: fromAccountId, amountMinor: -amountMinor })
       await entriesRepo.create(client, { transferId: transfer.id, accountId: toAccountId, amountMinor })
-      await accountsRepo.adjustBalance(client, fromAccountId, -amountMinor)
-      await accountsRepo.adjustBalance(client, toAccountId, amountMinor)
+      const adjustments = [[fromAccountId, -amountMinor], [toAccountId, amountMinor]].sort(([a], [b]) => a - b)
+      for (const [accountId, delta] of adjustments) await accountsRepo.adjustBalance(client, accountId, delta)
       return transfer
     })
   } catch (err) {

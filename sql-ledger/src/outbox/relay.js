@@ -43,8 +43,8 @@ export async function relayOnce({ pool, targetUrl, batchSize = 10, maxAttempts =
     } catch (err) {
       const attempts = row.attempts + 1
       const message = err instanceof Error ? err.message : String(err)
-      if (attempts >= maxAttempts) await outboxRepo.deadLetter(pool, row.id, { attempts, lastError: message })
-      else await outboxRepo.recordFailure(pool, row.id, { attempts, lastError: message })
+      if (attempts >= maxAttempts) await outboxRepo.deadLetter(pool, row.id, { lastError: message })
+      else await outboxRepo.recordFailure(pool, row.id, { lastError: message })
     }
   }
   return rows.length

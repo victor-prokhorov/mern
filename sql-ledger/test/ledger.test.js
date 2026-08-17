@@ -1,6 +1,7 @@
 import { expect, use } from 'chai'
 import chaiHttp from 'chai-http'
 import { pool } from '../src/db.js'
+import * as accountsRepo from '../src/repositories/accounts.js'
 import { useTestDb, createAccount, makeTransfer, httpAgent } from './helpers.js'
 
 use(chaiHttp)
@@ -90,6 +91,42 @@ describe('ledger', () => {
 
     expect(commitError).to.not.equal(null)
     expect(commitError.message).to.include('do not sum to zero')
+  })
+
+  it('keeps the stored balance_minor equal to the sum of entries after a series of transfers', async () => {
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+    const carol = await createAccount({ name: 'carol' })
+    await makeTransfer(alice.id, bob.id, 500, 'bal-1')
+    await makeTransfer(bob.id, carol.id, 200, 'bal-2')
+    await makeTransfer(carol.id, alice.id, 150, 'bal-3')
+    await makeTransfer(bob.id, alice.id, 50, 'bal-4')
+
+    const stored = []
+    const derived = []
+    for (const account of [alice, bob, carol]) {
+      stored.push(await accountsRepo.getStoredBalance(pool, account.id))
+      derived.push(await accountsRepo.computeDerivedBalance(pool, account.id))
+    }
+
+    expect(stored).to.deep.equal([-300n, 250n, 50n])
+    expect(stored).to.deep.equal(derived)
+  })
+
+  it('completes 20 concurrent opposing transfer pairs without a deadlock surfacing as 500', async function () {
+    this.timeout(60000)
+    const alice = await createAccount({ name: 'alice' })
+    const bob = await createAccount({ name: 'bob' })
+
+    const requests = []
+    for (let i = 0; i < 20; i += 1) {
+      requests.push(httpAgent.post('/api/transfers').send({ reference: `dl-ab-${i}`, fromAccountId: alice.id, toAccountId: bob.id, amountMinor: 10 }))
+      requests.push(httpAgent.post('/api/transfers').send({ reference: `dl-ba-${i}`, fromAccountId: bob.id, toAccountId: alice.id, amountMinor: 10 }))
+    }
+    const responses = await Promise.all(requests)
+
+    const statuses = responses.map((res) => res.status)
+    expect(statuses).to.deep.equal(statuses.map(() => 201))
   })
 
   it('rejects an amountMinor beyond the safely representable integer range', async () => {
