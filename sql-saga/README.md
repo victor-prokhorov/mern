@@ -1,6 +1,6 @@
 # sql-saga
 
-A Postgres orchestrated saga. Its problem is the **multi-service transaction**: `POST /api/orders` must reserve inventory, charge payment, place the order, and schedule shipping — four steps standing in for four separate services with four separate databases, so no single `BEGIN`/`COMMIT` can span them. A saga runs them as a sequence of local transactions, classifies each step as compensatable, pivot, or retryable, gives each a retry budget with full-jitter backoff, and on failure before the pivot runs the compensations in reverse so the world ends consistent instead of half-ordered. The whole decision is persisted in a saga log, so a crashed coordinator resumes instead of stranding a half-finished order. See [`src/saga/README.md`](src/saga/README.md) for the whole mechanism.
+A Postgres orchestrated saga. Its problem is the **multi-service transaction**: `POST /api/orders` must reserve inventory, charge payment, place the order, and schedule shipping — four steps standing in for four separate services with four separate databases, so no single `BEGIN`/`COMMIT` can span them. A saga runs them as a sequence of local transactions, classifies each step as compensatable, pivot, or retryable, gives each step — and each compensation — a retry budget with full-jitter backoff, and on failure before the pivot runs the compensations in reverse so the world ends consistent instead of half-ordered. The whole decision is persisted in a saga log, so a crashed coordinator resumes instead of stranding a half-finished order. See [`src/saga/README.md`](src/saga/README.md) for the whole mechanism.
 
 ## The domain
 
@@ -69,7 +69,7 @@ npm test        # bootstraps and truncates its own saga_test database on every r
 npm run test:ci # same, plus JUnit XML in test-results/
 ```
 
-20 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `saga_test` database created automatically on first run. Backoff sleeps are injected as no-ops in the tests, so retry-budget and compensation paths run instantly and deterministically.
+23 tests. They need a reachable Postgres — the same `mern-postgres` container, a separate `saga_test` database created automatically on first run. Backoff sleeps are injected as no-ops in the tests, so retry-budget and compensation paths run instantly and deterministically.
 
 ## Topics and their READMEs
 
