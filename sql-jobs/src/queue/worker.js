@@ -81,6 +81,7 @@ export function createWorker({
   }
 
   function start() {
+    if (timer) return
     stopping = false
     timer = setInterval(tick, pollMs)
     tick()
@@ -89,6 +90,7 @@ export function createWorker({
   async function stop({ timeoutMs = 2000 } = {}) {
     stopping = true
     if (timer) clearInterval(timer)
+    timer = null
     const deadline = Date.now() + timeoutMs
     while (inFlight.size > 0 && Date.now() < deadline) {
       await sleep(25)
