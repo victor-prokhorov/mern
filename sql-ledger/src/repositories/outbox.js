@@ -20,17 +20,18 @@ export async function claimUnpublished(client, { batchSize, maxAttempts }) {
 }
 
 export async function markPublished(client, id) {
-  await client.query('UPDATE outbox SET published_at = now() WHERE id = $1', [id])
+  const { rowCount } = await client.query('UPDATE outbox SET published_at = now() WHERE id = $1 AND published_at IS NULL', [id])
+  return rowCount > 0
 }
 
-export async function recordFailure(client, id, { attempts, lastError }) {
-  await client.query('UPDATE outbox SET attempts = $1, last_error = $2 WHERE id = $3', [attempts, lastError, id])
+export async function recordFailure(client, id, { lastError }) {
+  await client.query('UPDATE outbox SET attempts = attempts + 1, last_error = $1 WHERE id = $2', [lastError, id])
 }
 
-export async function deadLetter(client, id, { attempts, lastError }) {
+export async function deadLetter(client, id, { lastError }) {
   await client.query(
-    'UPDATE outbox SET attempts = $1, last_error = $2, dead_lettered_at = now() WHERE id = $3',
-    [attempts, lastError, id]
+    'UPDATE outbox SET attempts = attempts + 1, last_error = $1, dead_lettered_at = now() WHERE id = $2',
+    [lastError, id]
   )
 }
 
